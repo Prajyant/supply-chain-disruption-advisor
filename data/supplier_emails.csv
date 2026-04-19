@@ -1,0 +1,5 @@
+email_id,date,supplier,subject,body
+E-1001,2026-04-10,Alpha Metals,Shipment delay notice,Due to port congestion our copper shipment will be delayed by 5 days.
+E-1002,2026-04-11,Zenith Circuits,Capacity update,We are facing a capacity constraint and can fulfill only 70 percent of next week's order.
+E-1003,2026-04-12,Nova Plastics,Financial advisory,Our parent company has initiated insolvency proceedings creating uncertainty for upcoming deliveries.
+E-1004,2026-04-13,Delta Components,Quality alert,A quality recall has been issued for batch QX-44 and replacement lead time may increase.

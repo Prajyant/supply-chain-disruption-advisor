@@ -1,0 +1,5 @@
+item_id,date,item,current_stock,reorder_point,days_of_cover,primary_supplier
+I-3001,2026-04-14,Copper Cathode,1200,1500,5,Alpha Metals
+I-3002,2026-04-14,PCB Substrate,800,1000,4,Zenith Circuits
+I-3003,2026-04-14,ABS Resin,400,900,2,Nova Plastics
+I-3004,2026-04-14,Solder Paste,950,900,8,Delta Components
