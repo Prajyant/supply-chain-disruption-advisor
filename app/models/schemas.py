@@ -7,6 +7,7 @@ class IngestRequest(BaseModel):
     supplier_emails_path: str = "data/supplier_emails.csv"
     news_feed_path: str = "data/news_feed.csv"
     inventory_path: str = "data/inventory.csv"
+    use_realtime_news: bool = True
 
 
 class IngestResponse(BaseModel):

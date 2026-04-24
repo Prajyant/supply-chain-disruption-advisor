@@ -1,6 +1,11 @@
 from pathlib import Path
 from typing import Any
 import pandas as pd
+from app.ingestion.worldmonitor import (
+    fetch_supply_chain_news,
+    fetch_global_disruption_news,
+    normalize_news_event,
+)
 
 
 def _read_csv(path: str) -> pd.DataFrame:
@@ -69,13 +74,45 @@ def load_inventory(path: str) -> list[dict[str, Any]]:
     return records
 
 
+def load_realtime_news(limit: int = 50) -> list[dict[str, Any]]:
+    """Load real-time news from RSS feeds."""
+    all_events = []
+
+    # Fetch supply chain specific news
+    sc_items = fetch_supply_chain_news(limit=limit // 2)
+    for idx, item in enumerate(sc_items):
+        all_events.append(normalize_news_event(item, idx, "supply_chain_news"))
+
+    # Fetch global disruption news
+    global_items = fetch_global_disruption_news(limit=limit // 2)
+    for idx, item in enumerate(global_items):
+        all_events.append(normalize_news_event(item, idx + len(sc_items), "global_news"))
+
+    return all_events
+
+
 def load_all_data(
     supplier_emails_path: str,
     news_feed_path: str,
     inventory_path: str,
+    use_realtime_news: bool = True,
 ) -> list[dict[str, Any]]:
-    return (
+    """Load all disruption data sources.
+
+    Args:
+        supplier_emails_path: Path to supplier emails CSV
+        news_feed_path: Path to news feed CSV (used if use_realtime_news=False)
+        inventory_path: Path to inventory CSV
+        use_realtime_news: If True, fetch real-time data from WorldMonitor API
+    """
+    data = (
         load_supplier_emails(supplier_emails_path)
-        + load_news_feed(news_feed_path)
         + load_inventory(inventory_path)
     )
+
+    if use_realtime_news:
+        data.extend(load_realtime_news(limit=50))
+    else:
+        data.extend(load_news_feed(news_feed_path))
+
+    return data

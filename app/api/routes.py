@@ -18,6 +18,7 @@ def ingest(req: IngestRequest) -> IngestResponse:
             supplier_emails_path=req.supplier_emails_path,
             news_feed_path=req.news_feed_path,
             inventory_path=req.inventory_path,
+            use_realtime_news=req.use_realtime_news,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
