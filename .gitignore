@@ -6,3 +6,6 @@ __pycache__/
 .streamlit/
 .env
 *.log
+free-claude-code/
+.claude/
+CLAUDE.md

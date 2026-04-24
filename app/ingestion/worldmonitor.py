@@ -96,3 +96,24 @@ def normalize_news_event(item: dict[str, Any], idx: int, source: str) -> dict[st
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         },
     }
+
+
+def fetch_realtime_news() -> list[dict[str, Any]]:
+    """Fetch real-time news from all sources.
+
+    Returns:
+        List of normalized news events
+    """
+    all_events = []
+
+    # Fetch supply chain news
+    supply_chain_items = fetch_supply_chain_news(limit=30)
+    for idx, item in enumerate(supply_chain_items):
+        all_events.append(normalize_news_event(item, idx, "news_feed"))
+
+    # Fetch global disruption news
+    global_items = fetch_global_disruption_news(limit=20)
+    for idx, item in enumerate(global_items):
+        all_events.append(normalize_news_event(item, idx + len(supply_chain_items), "global_news"))
+
+    return all_events

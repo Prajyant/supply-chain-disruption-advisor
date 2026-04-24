@@ -1,15 +1,76 @@
+"""Main FastAPI application for Supply Chain Disruption Advisor."""
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from app.api.routes import router
+from app.background.workers import WorkerManager, IngestionWorker, RiskWorker, PropagationWorker
 
-app = FastAPI(title="Supply Chain Disruption Advisor", version="0.1.0")
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Global worker manager
+worker_manager = WorkerManager()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan - start/stop background workers.
+
+    Args:
+        app: The FastAPI application
+
+    Yields:
+        None
+    """
+    # Startup
+    logger.info("Starting background workers...")
+    worker_manager.register_worker("ingestion", IngestionWorker(interval_seconds=900))  # 15 min
+    worker_manager.register_worker("risk", RiskWorker(interval_seconds=1800))  # 30 min
+    worker_manager.register_worker("propagation", PropagationWorker(interval_seconds=60))  # 1 min
+    await worker_manager.start_all()
+    logger.info("Background workers started")
+
+    yield
+
+    # Shutdown
+    logger.info("Stopping background workers...")
+    await worker_manager.stop_all()
+    logger.info("Background workers stopped")
+
+
+# Create FastAPI app with lifespan
+app = FastAPI(
+    title="Supply Chain Disruption Advisor",
+    version="1.0.0",
+    description="Real-time supply chain disruption detection and mitigation system",
+    lifespan=lifespan,
+)
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # In production, specify allowed origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Include API routes
 app.include_router(router)
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    """Root endpoint.
+
+    Returns:
+        Welcome message
+    """
+    return {
+        "message": "Supply Chain Disruption Advisor API",
+        "version": "1.0.0",
+        "docs": "/docs",
+    }
