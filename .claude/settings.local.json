@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/Scripts/activate)",
+      "Bash(python -m pytest tests/ -v)",
+      "Bash(curl -s -X POST http://localhost:8000/ingest -H \"Content-Type: application/json\" -d '{\"supplier_emails_path\": \"data/supplier_emails.csv\", \"news_feed_path\": \"data/news_feed.csv\", \"inventory_path\": \"data/inventory.csv\", \"use_realtime_news\": true}')",
+      "Bash(curl -s http://localhost:8000/risks)",
+      "Bash(python -m json.tool)",
+      "Bash(python *)"
+    ]
+  }
+}

@@ -143,17 +143,39 @@ class RiskAnalyzer:
             severity = str(payload.get("severity", "medium")).lower()
             if severity not in {"low", "medium", "high", "critical"}:
                 severity = "medium"
+            disruption_type = str(payload.get("disruption_type", "unknown"))
+            signals = [str(s) for s in payload.get("signals", [])][:8]
+            metadata = dict(event.get("metadata", {})) if isinstance(event.get("metadata", {}), dict) else {}
+            headline = ""
+            summary = self._clean_text(str(payload.get("summary", "")))
+
+            if self._is_news_event(event):
+                headline, article_excerpt = self._extract_news_content(event=event, text=text)
+                if article_excerpt:
+                    metadata.setdefault("article_excerpt", article_excerpt)
+                metadata.setdefault("title", headline)
+                summary = article_excerpt if article_excerpt else summary
+
+            risk_reason = self._build_risk_reason(
+                severity=severity,
+                disruption_type=disruption_type,
+                signals=signals,
+            )
+            metadata["risk_reason"] = risk_reason
+            metadata["matched_signals"] = signals
             return RiskAssessment(
                 risk_id=f"{event.get('source')}-{event.get('reference_id')}",
                 source=event.get("source", "unknown"),
                 reference_id=str(event.get("reference_id", "")),
                 detected_at=datetime.now(timezone.utc),
-                disruption_type=str(payload.get("disruption_type", "unknown")),
+                disruption_type=disruption_type,
                 severity=severity,
                 confidence=float(payload.get("confidence", 0.65)),
-                signals=[str(s) for s in payload.get("signals", [])][:8],
+                signals=signals,
                 recommendations=[str(r) for r in payload.get("recommendations", RECOMMENDATION_MAP[severity])][:6],
-                summary=str(payload.get("summary", "Potential disruption risk detected.")),
+                summary=summary,
+                headline=headline,
+                metadata=metadata,
             )
         except Exception:
             return None
@@ -163,16 +185,31 @@ class RiskAnalyzer:
         severity = self._infer_severity(low_text)
         disruption_type = self._infer_disruption_type(low_text)
         signals = self._extract_signals(low_text)
+        metadata = dict(event.get("metadata", {})) if isinstance(event.get("metadata", {}), dict) else {}
         confidence = {
             "critical": 0.93,
             "high": 0.83,
             "medium": 0.72,
             "low": 0.58,
         }[severity]
-        summary = (
-            f"{severity.upper()} disruption risk detected for {event.get('source')} event. "
-            f"Likely category: {disruption_type.replace('_', ' ')}."
+        raw_text = str(event.get("text", ""))
+        headline = ""
+        risk_reason = self._build_risk_reason(
+            severity=severity,
+            disruption_type=disruption_type,
+            signals=signals,
         )
+
+        if self._is_news_event(event):
+            headline, article_excerpt = self._extract_news_content(event=event, text=raw_text)
+            summary = article_excerpt if article_excerpt else risk_reason
+            metadata.setdefault("article_excerpt", article_excerpt)
+            metadata.setdefault("title", headline)
+        else:
+            summary = risk_reason
+
+        metadata["risk_reason"] = risk_reason
+        metadata["matched_signals"] = signals
         return RiskAssessment(
             risk_id=f"{event.get('source')}-{event.get('reference_id')}",
             source=event.get("source", "unknown"),
@@ -184,6 +221,42 @@ class RiskAnalyzer:
             signals=signals,
             recommendations=RECOMMENDATION_MAP[severity],
             summary=summary,
+            headline=headline,
+            metadata=metadata,
+        )
+
+    def _is_news_event(self, event: dict[str, Any]) -> bool:
+        return "news" in str(event.get("source", "")).lower()
+
+    def _clean_text(self, value: Any) -> str:
+        cleaned = re.sub(r"<[^>]+>", " ", str(value or ""))
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.strip()
+
+    def _extract_news_content(self, event: dict[str, Any], text: str) -> tuple[str, str]:
+        metadata = event.get("metadata", {}) if isinstance(event.get("metadata", {}), dict) else {}
+        headline = self._clean_text(metadata.get("title") or metadata.get("headline") or "")
+        article_excerpt = self._clean_text(metadata.get("summary") or metadata.get("content") or "")
+
+        if not headline:
+            first_sentence = text.split(". ", 1)[0] if ". " in text else text
+            headline = self._clean_text(first_sentence)
+
+        if not article_excerpt:
+            if ". " in text:
+                parts = text.split(". ", 1)
+                article_excerpt = self._clean_text(parts[1]) if len(parts) > 1 and parts[1].strip() else self._clean_text(text)
+            else:
+                article_excerpt = self._clean_text(text)
+
+        return headline[:180], article_excerpt[:450]
+
+    def _build_risk_reason(self, severity: str, disruption_type: str, signals: list[str]) -> str:
+        normalized_type = disruption_type.replace("_", " ")
+        signal_text = ", ".join(signals[:4]) if signals else "contextual disruption indicators"
+        return (
+            f"Classified as {severity.upper()} {normalized_type} risk due to detected signals: "
+            f"{signal_text}."
         )
 
     def _infer_severity(self, text: str) -> str:

@@ -71,15 +71,28 @@ def fetch_global_disruption_news(limit: int = 50) -> list[dict[str, Any]]:
 
 def normalize_news_event(item: dict[str, Any], idx: int, source: str) -> dict[str, Any]:
     """Normalize news item to our internal schema."""
+    title = item.get("title", "")
+    summary = item.get("summary", item.get("description", ""))
+    link = item.get("link", "")
+    published = item.get("published", "")
+
+    # Build text field with title and summary
+    if summary and summary != title:
+        text = f"{title}. {summary}"
+    else:
+        text = title
+
     return {
         "source": source,
         "reference_id": f"NEWS-{idx}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
         "supplier": "Global",
-        "event_time": item.get("published", datetime.now(timezone.utc).isoformat()),
-        "text": f"{item.get('title', '')}. {item.get('summary', '')}",
+        "event_time": published or datetime.now(timezone.utc).isoformat(),
+        "text": text,
         "metadata": {
-            "link": item.get("link", ""),
-            "published": item.get("published", ""),
+            "link": link,
+            "title": title,
+            "summary": summary,
+            "published": published,
             "fetched_at": datetime.now(timezone.utc).isoformat(),
         },
     }

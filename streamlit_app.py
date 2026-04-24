@@ -1,7 +1,9 @@
 """
 Supply Chain Disruption Advisor - Modern Multi-Page Dashboard
 """
+import html
 import os
+import re
 from typing import Any
 from datetime import datetime
 import pandas as pd
@@ -169,6 +171,32 @@ def get_severity_color(severity: str) -> str:
 
 def severity_badge(severity: str) -> str:
     return f'<span class="severity-{severity}">{severity.upper()}</span>'
+
+def clean_text(value: Any) -> str:
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def build_risk_reason(risk: dict[str, Any]) -> str:
+    metadata = risk.get("metadata", {}) if isinstance(risk.get("metadata", {}), dict) else {}
+    explicit_reason = clean_text(metadata.get("risk_reason", ""))
+    if explicit_reason:
+        return explicit_reason
+
+    signals: list[str] = []
+    for signal in risk.get("signals", []):
+        cleaned_signal = clean_text(signal)
+        if cleaned_signal:
+            signals.append(cleaned_signal)
+
+    if signals:
+        return f"Triggered by detected signals: {', '.join(signals[:4])}."
+
+    return (
+        f"Classified as {str(risk.get('severity', 'low')).upper()} "
+        f"{str(risk.get('disruption_type', 'operations')).replace('_', ' ')} risk from article analysis."
+    )
 
 
 # Sidebar navigation
@@ -493,6 +521,47 @@ elif page == "📰 Real-Time News":
 
         for risk in news_risks:
             severity_color = get_severity_color(risk["severity"])
+            metadata = risk.get("metadata", {}) if isinstance(risk.get("metadata", {}), dict) else {}
+            news_link = clean_text(metadata.get("link", ""))
+            headline = clean_text(
+                risk.get("headline", "") or metadata.get("title", "") or metadata.get("headline", "")
+            )
+            article_summary = clean_text(
+                metadata.get("article_excerpt", "")
+                or metadata.get("summary", "")
+                or metadata.get("content", "")
+                or risk.get("summary", "")
+            )
+            if len(article_summary) > 500:
+                article_summary = article_summary[:497] + "..."
+            if not headline:
+                headline = article_summary[:140] + ("..." if len(article_summary) > 140 else "")
+
+            risk_reason = build_risk_reason(risk)
+            published = clean_text(metadata.get("published", "N/A"))
+            source_name = clean_text(risk.get("source", "Unknown")).replace("_", " ").title()
+
+            signal_values: list[str] = []
+            for signal in risk.get("signals", []):
+                normalized_signal = clean_text(signal)
+                if normalized_signal:
+                    signal_values.append(normalized_signal)
+            signal_html = "".join(
+                (
+                    "<span style='display: inline-block; margin: 2px 6px 0 0; padding: 2px 8px; "
+                    "border-radius: 9999px; background: #334155; color: #e2e8f0; font-size: 0.75rem;'>"
+                    f"{html.escape(sig)}</span>"
+                )
+                for sig in signal_values[:4]
+            )
+            signals_block = f"<div style='margin-top: 6px;'>{signal_html}</div>" if signal_html else ""
+            link_html = (
+                f'<a href="{html.escape(news_link, quote=True)}" target="_blank" '
+                'style="color: #6366f1; text-decoration: none; font-size: 0.875rem;">'
+                "🔗 Read Full Article →</a>"
+                if news_link
+                else ""
+            )
 
             with st.container():
                 st.markdown(
@@ -517,9 +586,16 @@ elif page == "📰 Real-Time News":
                                 📡 {risk['disruption_type'].replace('_', ' ').title()}
                             </span>
                         </div>
-                        <p style="color: #e2e8f0; margin: 0;">{risk['summary']}</p>
+                        <h4 style="color: #f8fafc; margin: 12px 0; font-size: 1.1rem;">{html.escape(headline)}</h4>
+                        <p style="color: #cbd5e1; margin: 8px 0; font-size: 0.9rem; line-height: 1.5;">{html.escape(article_summary)}</p>
+                        <div style="margin: 12px 0 10px 0; padding: 10px; border-radius: 8px; background: #0f172a; border: 1px solid #334155;">
+                            <p style="margin: 0; color: #f8fafc; font-size: 0.82rem; font-weight: 600;">Why this is a risk</p>
+                            <p style="margin: 6px 0 0 0; color: #cbd5e1; font-size: 0.84rem; line-height: 1.4;">{html.escape(risk_reason)}</p>
+                            {signals_block}
+                        </div>
+                        {link_html}
                         <p style="color: #64748b; font-size: 0.875rem; margin-top: 8px;">
-                            Source: {risk.get('source', 'Unknown')} | ID: {risk.get('reference_id', 'N/A')}
+                            Source: {html.escape(source_name)} | Published: {html.escape(published)}
                         </p>
                     </div>
                     """,

@@ -23,3 +23,25 @@ def test_detects_low_when_no_signal() -> None:
     }
     result = analyzer.analyze_event(event)
     assert result.severity == "low"
+
+
+def test_news_result_contains_readable_details_and_reason() -> None:
+    analyzer = RiskAnalyzer()
+    event = {
+        "source": "global_news",
+        "reference_id": "N1",
+        "text": (
+            "Port worker strike intensifies. "
+            "Logistics experts report severe port congestion and vessel backlog across key terminals."
+        ),
+        "metadata": {
+            "title": "Port worker strike intensifies",
+            "summary": "Logistics experts report severe port congestion and vessel backlog across key terminals.",
+            "link": "https://example.com/article",
+        },
+    }
+    result = analyzer.analyze_event(event)
+    assert result.headline
+    assert result.summary
+    assert result.metadata.get("risk_reason")
+    assert result.metadata.get("article_excerpt")

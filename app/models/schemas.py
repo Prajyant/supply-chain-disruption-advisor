@@ -35,6 +35,8 @@ class RiskAssessment(BaseModel):
     signals: list[str]
     recommendations: list[str]
     summary: str
+    headline: str = ""  # News headline for display
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ChatRequest(BaseModel):
