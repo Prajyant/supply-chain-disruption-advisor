@@ -8,4 +8,6 @@ __pycache__/
 *.log
 free-claude-code/
 .claude/
+mcp/
 CLAUDE.md
+
