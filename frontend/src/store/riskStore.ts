@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { RiskAssessment } from '../types';
+import { RiskAssessment } from '../types/index';
 
 interface RiskState {
   risks: RiskAssessment[];
