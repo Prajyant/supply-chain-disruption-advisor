@@ -9,10 +9,17 @@ logger = logging.getLogger(__name__)
 
 class RiskService:
     """Service for risk analysis and scoring."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.risk_analyzer = RiskAnalyzer()
+            cls._instance._risks = []
+        return cls._instance
 
     def __init__(self) -> None:
-        self.risk_analyzer = RiskAnalyzer()
-        self._risks: list[dict] = []
+        pass
 
     def analyze_events(self, events: list[dict]) -> list[dict]:
         """Analyze events and generate risk assessments.

@@ -30,6 +30,7 @@ class AdvisorService:
         news_feed_path: str,
         inventory_path: str,
         use_realtime_news: bool = True,
+        use_live_emails: bool = False,
     ) -> IngestResponse:
         """Ingest data from multiple sources.
 
@@ -38,6 +39,7 @@ class AdvisorService:
             news_feed_path: Path to news feed CSV
             inventory_path: Path to inventory CSV
             use_realtime_news: Whether to fetch real-time news
+            use_live_emails: Whether to read from live Gmail inbox
 
         Returns:
             Ingestion response with statistics
@@ -47,12 +49,47 @@ class AdvisorService:
             news_feed_path=news_feed_path,
             inventory_path=inventory_path,
             use_realtime_news=use_realtime_news,
+            use_live_emails=use_live_emails,
         )
 
         # Set up chat service with the new index
         index = self.ingestion_service.get_index()
         if index:
             self.chat_service.set_index(index)
+
+        # Run Risk Engine on raw events
+        events = result.get("events", [])
+        analyzed_risks = self.risk_service.analyze_events(events)
+
+        # Dynamically map each risk to a real (or newly created) graph node
+        score_map = {"critical": 0.9, "high": 0.7, "medium": 0.5, "low": 0.3}
+        for risk in analyzed_risks:
+            # Pull the supplier/sender name from the risk metadata
+            supplier_name = (
+                risk.get("metadata", {}).get("sender_name")
+                or risk.get("metadata", {}).get("supplier")
+                or risk.get("supplier")
+                or "Unknown Supplier"
+            )
+            severity = risk.get("severity", "low")
+            score = score_map.get(severity, 0.3)
+
+            # If a matching static node exists, update it.
+            # Otherwise, create a brand-new live node on the Digital Twin map.
+            existing_node = self.graph_service.graph.get_node(
+                "live_" + __import__("re").sub(r"[^a-z0-9]", "_", supplier_name.lower())[:30]
+            ) or self.graph_service.graph.get_node(
+                next(
+                    (nid for nid, n in self.graph_service.graph.nodes.items()
+                     if supplier_name.lower() in n.name.lower()),
+                    None
+                )
+            ) if supplier_name != "Unknown Supplier" else None
+
+            if existing_node:
+                self.graph_service.set_node_direct_risk(existing_node.id, score)
+            else:
+                self.graph_service.add_or_update_node(supplier_name, score)
 
         return IngestResponse(
             ingested_events=result["ingested_events"],

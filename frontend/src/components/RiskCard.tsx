@@ -39,11 +39,26 @@ export function RiskCard({ risk }: RiskCardProps) {
         </span>
       </div>
 
-      <h3 className="font-semibold text-white mb-2">{risk.headline || risk.summary}</h3>
-      <p className="text-sm text-slate-400 mb-3 line-clamp-2">{risk.summary}</p>
+      <h3 className="font-semibold text-white mb-2 line-clamp-1" title={risk.headline || risk.metadata?.subject || risk.summary}>
+        {risk.headline || risk.metadata?.subject || risk.summary}
+      </h3>
+      <p className="text-sm text-slate-400 mb-3 line-clamp-2">
+        {risk.headline || risk.metadata?.subject ? risk.summary : ''}
+      </p>
 
-      <div className="flex items-center gap-4 text-xs text-slate-500">
-        <span className="capitalize">{risk.source.replace('_', ' ')}</span>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <span className="capitalize px-2 py-1 bg-slate-800 rounded">
+          {risk.source.replace('_', ' ')}
+        </span>
+        {/* Try to show the actual sender name if available */}
+        {(risk.metadata?.sender_name || risk.metadata?.supplier || risk.metadata?.region) && (
+          <>
+            <span>•</span>
+            <span className="text-slate-300 truncate max-w-[150px]">
+              {risk.metadata.sender_name || risk.metadata.supplier || risk.metadata.region}
+            </span>
+          </>
+        )}
         <span>•</span>
         <span className="capitalize">{risk.disruption_type.replace('_', ' ')}</span>
       </div>

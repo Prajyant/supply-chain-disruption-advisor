@@ -113,11 +113,18 @@ class SupplyChainGraph:
 
 class GraphService:
     """Service for managing the supply chain digital twin."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.graph = SupplyChainGraph()
+            cls._instance.propagation_factor = 0.3
+            cls._instance.propagation_threshold = 0.6
+        return cls._instance
 
     def __init__(self) -> None:
-        self.graph = SupplyChainGraph()
-        self.propagation_factor: float = 0.3
-        self.propagation_threshold: float = 0.6
+        pass
 
     def load_sample_graph(self) -> None:
         """Load a sample supply chain graph for demonstration."""
@@ -320,3 +327,37 @@ class GraphService:
 
         node.direct_risk = max(0.0, min(1.0, risk_score))
         return True
+
+    def add_or_update_node(self, supplier_name: str, risk_score: float) -> str:
+        """Dynamically create or update a supplier node from a live event.
+
+        If a node for this supplier already exists, its risk score is updated.
+        If not, a brand-new node is added to the Digital Twin map.
+
+        Args:
+            supplier_name: Human-readable supplier / sender name
+            risk_score: Direct risk score (0.0 to 1.0)
+
+        Returns:
+            The node ID that was created or updated
+        """
+        import re
+        from datetime import datetime, timezone
+
+        # Build a stable node ID from the supplier name
+        node_id = "live_" + re.sub(r"[^a-z0-9]", "_", supplier_name.lower())[:30]
+
+        node = self.graph.get_node(node_id)
+        if node is None:
+            node = Node(
+                id=node_id,
+                type=NodeType.SUPPLIER,
+                name=supplier_name,
+                location="Live Email Source",
+                criticality="medium",
+            )
+            self.graph.add_node(node)
+
+        node.direct_risk = max(0.0, min(1.0, risk_score))
+        self.graph.last_updated = datetime.now(timezone.utc).isoformat()
+        return node_id
