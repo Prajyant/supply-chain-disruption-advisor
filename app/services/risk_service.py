@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 
 from app.services.risk_engine import RiskAnalyzer
+from app.models.schemas import RiskAssessment
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +17,14 @@ class RiskService:
             cls._instance = super().__new__(cls)
             cls._instance.risk_analyzer = RiskAnalyzer()
             cls._instance._risks = []
+            cls._instance._predictions = []  # Predictive cross-reference results
         return cls._instance
 
     def __init__(self) -> None:
         pass
 
     def analyze_events(self, events: list[dict]) -> list[dict]:
-        """Analyze events and generate risk assessments.
+        """Analyze events individually (reactive layer).
 
         Args:
             events: List of event dictionaries
@@ -33,33 +35,41 @@ class RiskService:
         self._risks = [self.risk_analyzer.analyze_event(event).model_dump() for event in events]
         return self._risks
 
-    def get_risks(self) -> list[dict]:
-        """Get all current risk assessments."""
-        return self._risks
-
-    def get_risk_by_id(self, risk_id: str) -> Optional[dict]:
-        """Get a specific risk by ID.
+    def cross_reference(
+        self,
+        operations: list[dict],
+        news_events: list[dict],
+    ) -> list[RiskAssessment]:
+        """Run predictive cross-reference analysis.
 
         Args:
-            risk_id: The risk ID to look up
+            operations: Normal operational emails (shipment confirmations, etc.)
+            news_events: Real-time world news events
 
         Returns:
-            Risk dictionary or None if not found
+            List of predictive RiskAssessment objects
         """
+        self._predictions = self.risk_analyzer.cross_reference(operations, news_events)
+        logger.info(f"Cross-reference produced {len(self._predictions)} predictions")
+        return self._predictions
+
+    def get_risks(self) -> list[dict]:
+        """Get all current reactive risk assessments."""
+        return self._risks
+
+    def get_predictions(self) -> list[RiskAssessment]:
+        """Get all predictive risk assessments."""
+        return self._predictions
+
+    def get_risk_by_id(self, risk_id: str) -> Optional[dict]:
+        """Get a specific risk by ID."""
         for risk in self._risks:
             if risk.get("risk_id") == risk_id:
                 return risk
         return None
 
     def get_risks_by_severity(self, severity: str) -> list[dict]:
-        """Get risks filtered by severity.
-
-        Args:
-            severity: The severity level to filter by
-
-        Returns:
-            List of risk dictionaries
-        """
+        """Get risks filtered by severity."""
         return [r for r in self._risks if r.get("severity") == severity]
 
     def get_critical_risks(self) -> list[dict]:
@@ -71,15 +81,7 @@ class RiskService:
         return self.get_risks_by_severity("high")
 
     def update_risk_score(self, risk_id: str, new_score: float) -> Optional[dict]:
-        """Update a risk's score.
-
-        Args:
-            risk_id: The risk ID to update
-            new_score: The new risk score (0.0 to 1.0)
-
-        Returns:
-            Updated risk dictionary or None if not found
-        """
+        """Update a risk's score."""
         for risk in self._risks:
             if risk.get("risk_id") == risk_id:
                 risk["confidence"] = new_score

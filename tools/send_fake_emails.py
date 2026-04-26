@@ -1,13 +1,17 @@
 """
-Fake Email Sender — Supply Chain Disruption Advisor
-====================================================
-Sends a stream of realistic fake supplier disruption emails to your own
-Gmail inbox so the live email ingestion pipeline has real data to scan.
+Fake Email Sender — Supply Chain Disruption Advisor (PREDICTIVE MODE)
+=====================================================================
+Sends a stream of NORMAL, BORING operational supply chain emails to your
+own Gmail inbox. These are NOT disaster alerts — they are routine updates
+like shipment confirmations, invoices, and capacity reports.
+
+The Predictive Engine will then cross-reference these normal operations
+against real-time world news to predict potential disruptions.
 
 Usage:
-    python tools/send_fake_emails.py            # sends all 12 emails
-    python tools/send_fake_emails.py --count 5  # sends first 5 emails
-    python tools/send_fake_emails.py --delay 3  # 3 second gap between sends
+    python tools/send_fake_emails.py            # sends all emails
+    python tools/send_fake_emails.py --count 5  # sends first 5
+    python tools/send_fake_emails.py --delay 2  # 2 second gap between sends
 """
 from __future__ import annotations
 
@@ -26,187 +30,131 @@ GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
 
 # ---------------------------------------------------------------------------
-# Fake email scenarios — variety of severity levels and disruption types
+# Normal, boring supply chain operational emails
+# The predictive engine will cross-reference these against world news
 # ---------------------------------------------------------------------------
 FAKE_EMAILS = [
     {
         "from_name": "Alpha Metals Supply Co.",
-        "from_addr": "alerts@alphametals-fake.com",
-        "subject": "URGENT: Port Congestion — Copper Shipment Delayed",
+        "from_addr": "logistics@alphametals-fake.com",
+        "subject": "Shipment confirmation — Order AM-4421 (Copper Coil)",
         "body": (
-            "Dear Procurement Team,\n\n"
-            "We regret to inform you that due to severe port congestion at the Port of "
-            "Shanghai, your copper shipment (Order #CM-4421) will be delayed by 7–10 business days.\n\n"
-            "Our vessel has been waiting at anchor for 4 days. Congestion levels are at a 3-year high "
-            "due to the recent typhoon season disrupting berthing schedules.\n\n"
-            "We will provide daily updates and prioritise your cargo as soon as a berth becomes available.\n\n"
-            "Regards,\nAlpha Metals Supply Co."
-        ),
-    },
-    {
-        "from_name": "Nova Plastics International",
-        "from_addr": "cfo@novaplastics-fake.com",
-        "subject": "Confidential: Insolvency Proceedings Initiated",
-        "body": (
-            "Dear Valued Customer,\n\n"
-            "We are writing to formally inform you that Nova Plastics International has initiated "
-            "voluntary insolvency proceedings as of today. Our parent company's financial restructuring "
-            "has created uncertainty for all upcoming deliveries.\n\n"
-            "All pending orders are currently on hold pending court approval. We advise you to "
-            "immediately identify alternative suppliers for your polymer requirements.\n\n"
-            "An administrator has been appointed and will be in touch within 5 business days.\n\n"
-            "Regards,\nNova Plastics CFO Office"
+            "Hi Team,\n\n"
+            "Confirming that Order AM-4421 (500 units copper coil) has left our "
+            "Shanghai facility and is en route to your LA warehouse.\n\n"
+            "Estimated transit time is 14 days via ocean freight through the "
+            "Strait of Hormuz and Suez Canal.\n"
+            "Vessel: MV Oriental Fortune\n"
+            "Tracking: COSCO-88412\n\n"
+            "Everything is on schedule. No issues to report.\n\n"
+            "Best regards,\nAlpha Metals Logistics"
         ),
     },
     {
         "from_name": "Zenith Circuits Ltd.",
-        "from_addr": "operations@zenithcircuits-fake.com",
-        "subject": "Capacity Constraint — Q2 Orders Affected",
+        "from_addr": "ops@zenithcircuits-fake.com",
+        "subject": "Weekly capacity update — Taipei fab running smoothly",
         "body": (
             "Hello,\n\n"
-            "Due to unexpected equipment failure at our Taipei manufacturing facility, we are "
-            "currently operating at 65% of normal capacity.\n\n"
-            "We can only fulfil 70% of your scheduled Q2 orders on time. The remaining 30% will "
-            "experience a 2–3 week delay. We are working to source additional capacity from our "
-            "Shenzhen facility but lead times will be extended.\n\n"
-            "Please review your production schedules accordingly.\n\n"
+            "This is our weekly operations update from the Taipei fabrication facility.\n\n"
+            "Current utilization: 92%\n"
+            "Your standing order for 3,000 PCB assemblies is on track for delivery "
+            "next Tuesday. All wafer supplies are confirmed and quality checks are passing.\n\n"
+            "No issues to report this week.\n\n"
             "Best regards,\nZenith Circuits Operations"
         ),
     },
     {
-        "from_name": "Delta Components GmbH",
-        "from_addr": "quality@deltacomponents-fake.com",
-        "subject": "Quality Recall Notice — Batch QX-44 Affected",
+        "from_name": "Nova Plastics International",
+        "from_addr": "invoicing@novaplastics-fake.com",
+        "subject": "Invoice & dispatch notice — 2000kg polymer pellets",
         "body": (
-            "QUALITY ALERT — ACTION REQUIRED\n\n"
-            "A quality recall has been issued for batch QX-44 (manufactured between March 10–18, 2026). "
-            "Internal testing has identified a defect in the thermal bonding layer that may cause failure "
-            "under high-temperature operating conditions.\n\n"
-            "Replacement units are being manufactured but lead time will increase by 3–4 weeks. "
-            "Please quarantine any affected units immediately and do not use in production.\n\n"
-            "Contact your account manager for RMA instructions.\n\n"
-            "Delta Components Quality Assurance"
+            "Dear Procurement,\n\n"
+            "Please find attached Invoice #NP-7823 for 2,000kg polymer pellets "
+            "dispatched from our Rotterdam plant yesterday.\n\n"
+            "Ship: MS European Spirit\n"
+            "Route: Rotterdam → Newark via North Atlantic\n"
+            "Expected arrival: 10 days\n"
+            "Payment terms: Net 30\n\n"
+            "Thank you for your continued business.\n\n"
+            "Nova Plastics Accounts"
         ),
     },
     {
         "from_name": "Pacific Freight Partners",
-        "from_addr": "dispatch@pacificfreight-fake.com",
-        "subject": "Worker Strike — West Coast Port Operations Suspended",
+        "from_addr": "bookings@pacificfreight-fake.com",
+        "subject": "Booking confirmation — Container PFPC-221 (Busan → LA)",
         "body": (
-            "Urgent Advisory,\n\n"
-            "We are writing to advise that dock workers at the Port of Los Angeles and Long Beach "
-            "have begun an indefinite strike as of 06:00 this morning. All container operations have "
-            "been suspended until further notice.\n\n"
-            "Approximately 14 vessels are currently waiting at anchor. We estimate a backlog of 8–12 "
-            "days even once the strike is resolved. We recommend diverting urgent cargo to the Port of "
-            "Seattle as an alternative.\n\n"
-            "We will keep you updated every 24 hours.\n\n"
+            "Dear Customer,\n\n"
+            "Your container PFPC-221 carrying mixed cargo from Busan, South Korea "
+            "has been loaded onto MV Pacific Star.\n\n"
+            "Departure: April 24\n"
+            "Route: Busan → Port of Los Angeles\n"
+            "ETA: May 8 (14 days)\n\n"
+            "All documentation is in order. You will receive an arrival notice "
+            "48 hours before docking.\n\n"
             "Pacific Freight Partners"
         ),
     },
     {
         "from_name": "SteelBridge Manufacturing",
-        "from_addr": "emergency@steelbridge-fake.com",
-        "subject": "Factory Fire — Production Halted at Facility 3",
+        "from_addr": "production@steelbridge-fake.com",
+        "subject": "Production schedule update — 300 steel frames (Guangzhou)",
         "body": (
-            "EMERGENCY NOTICE\n\n"
-            "A fire broke out in Facility 3 of our Guangzhou plant at 02:30 local time. Emergency "
-            "services have contained the blaze but the facility has sustained significant structural "
-            "damage. All production at Facility 3 is halted indefinitely.\n\n"
-            "Facility 3 accounted for 40% of your monthly order volume. We are assessing whether "
-            "Facilities 1 and 2 can absorb the additional load. An update will follow within 48 hours.\n\n"
-            "SteelBridge Emergency Response Team"
-        ),
-    },
-    {
-        "from_name": "TechSource Semiconductors",
-        "from_addr": "security@techsource-fake.com",
-        "subject": "Cyberattack — Systems Partially Restored",
-        "body": (
-            "Dear Partners,\n\n"
-            "TechSource Semiconductors was the target of a ransomware cyberattack on April 20th. "
-            "Our ERP and order management systems were taken offline as a precautionary measure.\n\n"
-            "Core manufacturing systems have been restored, however order processing and shipment "
-            "tracking remain limited. Expect delays of 5–8 business days on all pending shipments "
-            "while we complete forensic investigation and system restoration.\n\n"
-            "We apologise for the disruption and are working around the clock to restore full service.\n\n"
-            "TechSource IT Security Team"
-        ),
-    },
-    {
-        "from_name": "Global Logistics Express",
-        "from_addr": "updates@globallogistics-fake.com",
-        "subject": "Export Ban — Rare Earth Minerals (Trade Advisory)",
-        "body": (
-            "Trade Advisory — Immediate Action Required\n\n"
-            "Effective immediately, the Ministry of Commerce has implemented an export ban on "
-            "rare earth minerals including neodymium, dysprosium, and terbium. This follows "
-            "escalating trade tensions and new sanction measures.\n\n"
-            "Shipments currently in transit may be held at customs. We advise immediate review of "
-            "your rare earth mineral inventory levels and sourcing strategy.\n\n"
-            "Our trade compliance team is available 24/7 to assist.\n\n"
-            "Global Logistics Express — Trade Compliance Division"
+            "Hello,\n\n"
+            "Your order for 300 steel frames is currently in production at our "
+            "Guangzhou facility.\n\n"
+            "Production completion: April 28\n"
+            "Shipment date: April 29\n"
+            "ETA to your LA hub: 16 days from ship date\n\n"
+            "All raw materials are in stock and production is proceeding normally.\n\n"
+            "SteelBridge Manufacturing"
         ),
     },
     {
         "from_name": "Meridian Chemicals",
-        "from_addr": "supply@meridianchemicals-fake.com",
-        "subject": "Price Increase Notice — Chemical Feedstocks Q3 2026",
+        "from_addr": "sales@meridianchemicals-fake.com",
+        "subject": "Q3 pricing confirmed — chemical feedstock from Gujarat",
         "body": (
             "Dear Customer,\n\n"
-            "Due to rising energy costs and feedstock shortages, Meridian Chemicals will be "
-            "implementing a 12% price increase on all polymer-grade chemical feedstocks effective "
-            "July 1, 2026.\n\n"
-            "We understand the impact this has on your supply chain planning and are happy to "
-            "offer volume-locked pricing for customers who commit to Q3 and Q4 orders before May 15.\n\n"
-            "Please contact your account manager to lock in current rates.\n\n"
-            "Meridian Chemicals Sales Team"
+            "As discussed, we are holding Q2 pricing for your chemical feedstock "
+            "orders through Q3 2026.\n\n"
+            "Your next scheduled delivery of 800kg ships from our Gujarat plant "
+            "on May 1. Transit to your Newark facility: 18 days.\n\n"
+            "Route: Mundra Port → Newark via Cape of Good Hope\n\n"
+            "Please confirm your May order quantities by April 28.\n\n"
+            "Meridian Chemicals Sales"
         ),
     },
     {
-        "from_name": "Yangtze River Transport",
-        "from_addr": "ops@yangtzeriver-fake.com",
-        "subject": "Flood Warning — River Operations Suspended",
+        "from_name": "Delta Components GmbH",
+        "from_addr": "quality@deltacomponents-fake.com",
+        "subject": "QC passed — Batch DX-55 thermal sensors ready to ship",
         "body": (
-            "Urgent — Operational Advisory\n\n"
-            "Severe flooding along the Yangtze River has forced the suspension of all barge "
-            "operations between Chongqing and Wuhan. Water levels are 4.2 metres above the "
-            "seasonal average following record rainfall.\n\n"
-            "All inland waterway shipments are on hold. Cargo currently in transit is being held "
-            "at Wuhan staging area. We expect operations to resume in 10–14 days pending water "
-            "levels receding to safe navigation levels.\n\n"
-            "Weather alert status: RED\n\n"
-            "Yangtze River Transport Operations"
+            "Good news!\n\n"
+            "Batch DX-55 (thermal sensors, 1,200 units) has cleared our quality "
+            "inspection at the Tokyo facility with a 99.7% pass rate.\n\n"
+            "Shipment is scheduled for Thursday.\n"
+            "ETA to your East Coast warehouse: 12 days\n"
+            "Carrier: NYK Line\n\n"
+            "All certificates of conformity are attached.\n\n"
+            "Delta Components Quality Assurance"
         ),
     },
     {
         "from_name": "BrightPower Electronics",
-        "from_addr": "logistics@brightpower-fake.com",
-        "subject": "Late Shipment Advisory — Order BP-7721",
+        "from_addr": "warehouse@brightpower-fake.com",
+        "subject": "Component availability confirmed — May order (Ho Chi Minh City)",
         "body": (
             "Hi,\n\n"
-            "We wanted to proactively notify you that Order BP-7721 (PCB assemblies, 2,500 units) "
-            "will arrive approximately 4 days later than originally scheduled.\n\n"
-            "The delay is due to a late shipment of capacitors from our sub-supplier in Vietnam, "
-            "which has created a backlog on our production line. The order is now 85% complete and "
-            "we expect to dispatch on Thursday.\n\n"
-            "We apologise for any inconvenience this may cause.\n\n"
-            "BrightPower Electronics Logistics"
-        ),
-    },
-    {
-        "from_name": "Apex Raw Materials",
-        "from_addr": "trading@apexrawmaterials-fake.com",
-        "subject": "Critical Shortage — Steel Coil Availability Q2",
-        "body": (
-            "Market Alert,\n\n"
-            "We are issuing a critical shortage warning for hot-rolled steel coils. Global steel "
-            "production has been impacted by simultaneous plant shutdowns in South Korea and Germany, "
-            "reducing available supply by an estimated 18%.\n\n"
-            "Current lead times have extended from 6 weeks to 14–16 weeks. Spot prices have "
-            "increased by 23% month-on-month. We recommend securing forward contracts immediately "
-            "if steel coils are critical to your production schedule.\n\n"
-            "Apex Raw Materials Trading Desk"
+            "All components for your May order are confirmed available at our "
+            "Ho Chi Minh City warehouse.\n\n"
+            "Assembly start: April 28\n"
+            "Ship date: May 2\n"
+            "Expected delivery: 11 days after dispatch\n"
+            "Route: HCMC → Port of Los Angeles\n\n"
+            "We have buffer stock available if you need to increase the order size.\n\n"
+            "BrightPower Electronics Warehouse Team"
         ),
     },
 ]
@@ -223,7 +171,9 @@ def send_email(smtp: smtplib.SMTP_SSL, from_name: str, from_addr: str,
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Send fake supply chain disruption emails.")
+    parser = argparse.ArgumentParser(
+        description="Send normal supply chain operations emails for predictive testing."
+    )
     parser.add_argument("--count", type=int, default=len(FAKE_EMAILS),
                         help=f"Number of emails to send (max {len(FAKE_EMAILS)})")
     parser.add_argument("--delay", type=float, default=1.5,
@@ -240,7 +190,7 @@ def main() -> None:
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
             smtp.login(GMAIL_USER, GMAIL_PASS)
-            print(f"✅  Connected. Sending {len(emails_to_send)} fake emails to {GMAIL_USER}\n")
+            print(f"✅  Connected. Sending {len(emails_to_send)} normal operations emails\n")
 
             for i, email_data in enumerate(emails_to_send, start=1):
                 try:
@@ -252,14 +202,15 @@ def main() -> None:
                         subject=email_data["subject"],
                         body=email_data["body"],
                     )
-                    print(f"  [{i}/{len(emails_to_send)}] ✉️  Sent: {email_data['subject'][:60]}")
+                    print(f"  [{i}/{len(emails_to_send)}] ✉️  Sent: {email_data['subject'][:65]}")
                     if i < len(emails_to_send):
                         time.sleep(args.delay)
                 except Exception as e:
                     print(f"  [{i}/{len(emails_to_send)}] ❌  Failed: {e}")
 
-        print(f"\n🎉  Done! {len(emails_to_send)} emails sent to {GMAIL_USER}.")
-        print("     Now go to your dashboard → Settings → Live Gmail Inbox → Ingest Data!\n")
+        print(f"\n🎉  Done! {len(emails_to_send)} normal emails sent to {GMAIL_USER}.")
+        print("     These are BORING operational emails — no disasters!")
+        print("     The Predictive Engine will cross-reference them with world news.\n")
 
     except smtplib.SMTPAuthenticationError:
         print("❌  Authentication failed. Make sure GMAIL_APP_PASSWORD is a valid 16-char App Password.")

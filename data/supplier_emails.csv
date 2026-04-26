@@ -1,5 +1,9 @@
-email_id,date,supplier,subject,body
-E-1001,2026-04-10,Alpha Metals,Shipment delay notice,Due to port congestion our copper shipment will be delayed by 5 days.
-E-1002,2026-04-11,Zenith Circuits,Capacity update,We are facing a capacity constraint and can fulfill only 70 percent of next week's order.
-E-1003,2026-04-12,Nova Plastics,Financial advisory,Our parent company has initiated insolvency proceedings creating uncertainty for upcoming deliveries.
-E-1004,2026-04-13,Delta Components,Quality alert,A quality recall has been issued for batch QX-44 and replacement lead time may increase.
+email_id,date,supplier,subject,body,origin_location,eta_days,material
+E-1001,2026-04-20,Alpha Metals,Shipment confirmation – Order AM-4421,"Hi Team, confirming that Order AM-4421 (500 units copper coil) has left our Shanghai facility and is en route to your LA warehouse. Estimated transit time is 14 days via ocean freight. Tracking number: COSCO-88412.",Shanghai,14,copper coil
+E-1002,2026-04-21,Zenith Circuits,Weekly capacity update,"Hello, this is our weekly update. Our Taipei fab is currently running at 92% utilization. Your standing order for 3000 PCB assemblies is on track for delivery next Tuesday. No issues to report.",Taipei,7,PCB assemblies
+E-1003,2026-04-22,Nova Plastics,Invoice and dispatch notice,"Please find attached Invoice #NP-7823 for 2000kg polymer pellets dispatched from our Rotterdam plant yesterday. Expected arrival at your Newark hub in 10 days. Payment terms: Net 30.",Rotterdam,10,polymer pellets
+E-1004,2026-04-22,Delta Components,QC passed – batch DX-55 ready,"Good news — batch DX-55 (thermal sensors, 1200 units) has cleared our quality inspection at the Tokyo facility. Shipment is scheduled for Thursday. ETA to your East Coast warehouse: 12 days.",Tokyo,12,thermal sensors
+E-1005,2026-04-23,Pacific Freight Partners,Booking confirmation – container PFPC-221,"Your container PFPC-221 carrying mixed cargo from Busan has been loaded onto MV Pacific Star. Departure confirmed for April 24. ETA Port of Los Angeles: May 8 (14 days).",Busan,14,mixed cargo
+E-1006,2026-04-23,Meridian Chemicals,Q3 pricing hold confirmed,"As discussed, we are holding Q2 pricing for your chemical feedstock orders through Q3. Your next scheduled delivery of 800kg from our Gujarat plant ships May 1. Transit: 18 days to Newark.",Gujarat,18,chemical feedstock
+E-1007,2026-04-24,SteelBridge Manufacturing,Production schedule update,"Your order for 300 steel frames is in production at our Guangzhou facility. We are on schedule for completion by April 28 with shipment the following day. ETA to LA hub: 16 days from ship date.",Guangzhou,16,steel frames
+E-1008,2026-04-24,BrightPower Electronics,Component availability notice,"All components for your May order are confirmed available at our Ho Chi Minh City warehouse. We will begin assembly on April 28 and ship by May 2. Expected delivery: 11 days after dispatch.",Ho Chi Minh City,11,electronic components

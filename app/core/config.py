@@ -16,6 +16,9 @@ class Settings(BaseModel):
     imap_port: int = int(os.getenv("IMAP_PORT", "993"))
     imap_user: str | None = os.getenv("GMAIL_USER") or None
     imap_pass: str | None = os.getenv("GMAIL_APP_PASSWORD") or None
+    # Gemini AI
+    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or None
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 
 @lru_cache(maxsize=1)
