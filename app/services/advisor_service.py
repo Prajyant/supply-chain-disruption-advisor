@@ -72,9 +72,10 @@ class AdvisorService:
         )
 
         # ---------------------------------------------------------------
-        # STEP 2: Run individual analysis on each event (reactive layer)
+        # STEP 2: Reactive layer — analyze emails/inventory only
+        # News events are context for Gemini, NOT individual risk assessments
         # ---------------------------------------------------------------
-        all_risks = self.risk_service.analyze_events(events)
+        all_risks = self.risk_service.analyze_events(email_events)
 
         # ---------------------------------------------------------------
         # STEP 3: Run PREDICTIVE cross-reference (the magic)
@@ -148,29 +149,42 @@ class AdvisorService:
         """Get all risk assessments (reactive + predictive).
 
         Returns:
-            List of risk assessments sorted by severity
+            - Predictive risks (from Gemini cross-reference) — always shown
+            - Reactive risks from emails that self-reported a problem (medium/high/critical)
+            - Low-severity routine emails are suppressed — they are operational noise
         """
-        # Get both reactive and predictive risks
-        risks = self.risk_service.get_risks()
+        reactive_risks = self.risk_service.get_risks()
         predictions = self.risk_service.get_predictions()
 
-        # Combine
-        all_risks = list(risks)
+        all_risks: list[dict] = []
 
-        # Convert predictions (already RiskAssessment objects) to dicts
+        # Add predictions (always shown — this is the main value-add)
         for pred in predictions:
             all_risks.append(pred.model_dump())
+
+        # Add reactive email risks — only those that actually flagged a problem
+        for risk in reactive_risks:
+            meta = risk.get("metadata", {}) or {}
+            # Skip news context placeholders
+            if meta.get("_news_context_only"):
+                continue
+            # Skip low-severity routine operational emails (they have no problem to report)
+            if risk.get("severity") == "low":
+                continue
+            all_risks.append(risk)
 
         if not all_risks:
             return []
 
-        # Sort by severity
+        # Sort: predictions first, then by severity descending
         severity_order = {"critical": 4, "high": 3, "medium": 2, "low": 1}
-        all_risks.sort(
-            key=lambda r: severity_order.get(r.get("severity", "low"), 0),
-            reverse=True,
-        )
 
+        def sort_key(r: dict) -> tuple:
+            is_pred = 1 if r.get("metadata", {}).get("type") == "prediction" else 0
+            sev = severity_order.get(r.get("severity", "low"), 0)
+            return (is_pred, sev)
+
+        all_risks.sort(key=sort_key, reverse=True)
         return [RiskAssessment(**r) for r in all_risks]
 
     def chat(self, question: str, top_k: int = 5) -> ChatResponse:

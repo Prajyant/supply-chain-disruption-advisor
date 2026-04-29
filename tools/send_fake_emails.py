@@ -38,125 +38,122 @@ FAKE_EMAILS = [
         "from_name": "Alpha Metals Supply Co.",
         "from_addr": "logistics@alphametals-fake.com",
         "subject": "Shipment confirmation — Order AM-4421 (Copper Coil)",
-        "body": (
-            "Hi Team,\n\n"
-            "Confirming that Order AM-4421 (500 units copper coil) has left our "
-            "Shanghai facility and is en route to your LA warehouse.\n\n"
-            "Estimated transit time is 14 days via ocean freight through the "
-            "Strait of Hormuz and Suez Canal.\n"
-            "Vessel: MV Oriental Fortune\n"
-            "Tracking: COSCO-88412\n\n"
-            "Everything is on schedule. No issues to report.\n\n"
-            "Best regards,\nAlpha Metals Logistics"
-        ),
+        "body": "Your order AM-4421 for 5000kg of copper coil has been dispatched from our Shanghai warehouse. Estimated arrival at Port of LA is 14 days. Bill of lading is attached.",
     },
     {
         "from_name": "Zenith Circuits Ltd.",
         "from_addr": "ops@zenithcircuits-fake.com",
         "subject": "Weekly capacity update — Taipei fab running smoothly",
-        "body": (
-            "Hello,\n\n"
-            "This is our weekly operations update from the Taipei fabrication facility.\n\n"
-            "Current utilization: 92%\n"
-            "Your standing order for 3,000 PCB assemblies is on track for delivery "
-            "next Tuesday. All wafer supplies are confirmed and quality checks are passing.\n\n"
-            "No issues to report this week.\n\n"
-            "Best regards,\nZenith Circuits Operations"
-        ),
+        "body": "Just a quick update: our Taipei fabrication plant is currently running at 95% utilization. We are on track to meet all Q2 delivery commitments with no expected delays.",
     },
     {
         "from_name": "Nova Plastics International",
         "from_addr": "invoicing@novaplastics-fake.com",
         "subject": "Invoice & dispatch notice — 2000kg polymer pellets",
-        "body": (
-            "Dear Procurement,\n\n"
-            "Please find attached Invoice #NP-7823 for 2,000kg polymer pellets "
-            "dispatched from our Rotterdam plant yesterday.\n\n"
-            "Ship: MS European Spirit\n"
-            "Route: Rotterdam → Newark via North Atlantic\n"
-            "Expected arrival: 10 days\n"
-            "Payment terms: Net 30\n\n"
-            "Thank you for your continued business.\n\n"
-            "Nova Plastics Accounts"
-        ),
+        "body": "Please find attached the invoice for your recent order of industrial polymer pellets. The shipment left our Munich facility this morning via ground transport.",
     },
     {
         "from_name": "Pacific Freight Partners",
         "from_addr": "bookings@pacificfreight-fake.com",
         "subject": "Booking confirmation — Container PFPC-221 (Busan → LA)",
-        "body": (
-            "Dear Customer,\n\n"
-            "Your container PFPC-221 carrying mixed cargo from Busan, South Korea "
-            "has been loaded onto MV Pacific Star.\n\n"
-            "Departure: April 24\n"
-            "Route: Busan → Port of Los Angeles\n"
-            "ETA: May 8 (14 days)\n\n"
-            "All documentation is in order. You will receive an arrival notice "
-            "48 hours before docking.\n\n"
-            "Pacific Freight Partners"
-        ),
+        "body": "Container PFPC-221 has been successfully loaded onto the vessel at Busan Port. Expected transit time is standard. We will notify you of any schedule changes.",
     },
     {
         "from_name": "SteelBridge Manufacturing",
         "from_addr": "production@steelbridge-fake.com",
         "subject": "Production schedule update — 300 steel frames (Guangzhou)",
-        "body": (
-            "Hello,\n\n"
-            "Your order for 300 steel frames is currently in production at our "
-            "Guangzhou facility.\n\n"
-            "Production completion: April 28\n"
-            "Shipment date: April 29\n"
-            "ETA to your LA hub: 16 days from ship date\n\n"
-            "All raw materials are in stock and production is proceeding normally.\n\n"
-            "SteelBridge Manufacturing"
-        ),
+        "body": "Production of the 300 custom steel frames is progressing as planned at our Guangzhou plant. We expect to complete the batch by next Friday.",
     },
     {
         "from_name": "Meridian Chemicals",
         "from_addr": "sales@meridianchemicals-fake.com",
         "subject": "Q3 pricing confirmed — chemical feedstock from Gujarat",
-        "body": (
-            "Dear Customer,\n\n"
-            "As discussed, we are holding Q2 pricing for your chemical feedstock "
-            "orders through Q3 2026.\n\n"
-            "Your next scheduled delivery of 800kg ships from our Gujarat plant "
-            "on May 1. Transit to your Newark facility: 18 days.\n\n"
-            "Route: Mundra Port → Newark via Cape of Good Hope\n\n"
-            "Please confirm your May order quantities by April 28.\n\n"
-            "Meridian Chemicals Sales"
-        ),
+        "body": "We are pleased to confirm that pricing for our chemical feedstock produced in Gujarat will remain steady through Q3. Your current allocations are guaranteed.",
     },
     {
         "from_name": "Delta Components GmbH",
         "from_addr": "quality@deltacomponents-fake.com",
         "subject": "QC passed — Batch DX-55 thermal sensors ready to ship",
-        "body": (
-            "Good news!\n\n"
-            "Batch DX-55 (thermal sensors, 1,200 units) has cleared our quality "
-            "inspection at the Tokyo facility with a 99.7% pass rate.\n\n"
-            "Shipment is scheduled for Thursday.\n"
-            "ETA to your East Coast warehouse: 12 days\n"
-            "Carrier: NYK Line\n\n"
-            "All certificates of conformity are attached.\n\n"
-            "Delta Components Quality Assurance"
-        ),
+        "body": "Quality control has signed off on the latest batch of DX-55 thermal sensors at our Shenzhen testing facility. Ready for handover to your freight forwarder.",
     },
     {
         "from_name": "BrightPower Electronics",
         "from_addr": "warehouse@brightpower-fake.com",
         "subject": "Component availability confirmed — May order (Ho Chi Minh City)",
-        "body": (
-            "Hi,\n\n"
-            "All components for your May order are confirmed available at our "
-            "Ho Chi Minh City warehouse.\n\n"
-            "Assembly start: April 28\n"
-            "Ship date: May 2\n"
-            "Expected delivery: 11 days after dispatch\n"
-            "Route: HCMC → Port of Los Angeles\n\n"
-            "We have buffer stock available if you need to increase the order size.\n\n"
-            "BrightPower Electronics Warehouse Team"
-        ),
+        "body": "We have secured the necessary raw materials for your May production run at our Ho Chi Minh City plant. All components are allocated.",
     },
+    {
+        "from_name": "EuroLogistics",
+        "from_addr": "dispatch@eurologistics-fake.com",
+        "subject": "Logistics update — Fleet maintenance completed at Rotterdam depot",
+        "body": "Routine maintenance on our European trucking fleet has concluded at the Rotterdam depot. Normal scheduling capacity resumes tomorrow.",
+    },
+    {
+        "from_name": "Aussie Minerals",
+        "from_addr": "contracts@aussieminerals-fake.com",
+        "subject": "Supply contract renewed — 5-year agreement for lithium",
+        "body": "We are thrilled to sign the 5-year lithium supply contract with you. The first quarterly extraction from our Perth site is scheduled for next month.",
+    },
+    {
+        "from_name": "MicroTech Solutions",
+        "from_addr": "inventory@microtech-fake.com",
+        "subject": "Inventory snapshot — 50,000 units ready in Manila",
+        "body": "As requested, here is the current inventory snapshot. We have 50,000 units of the logic board sitting securely in our Manila warehouse awaiting your dispatch orders.",
+    },
+    {
+        "from_name": "EcoPack Industries",
+        "from_addr": "sourcing@ecopack-fake.com",
+        "subject": "Sourcing change — transitioning packaging supplier",
+        "body": "We are transitioning our cardboard sourcing from our previous Jakarta partner to a new local supplier. This should not affect our delivery timelines to your facilities.",
+    },
+    {
+        "from_name": "Global Freight Forwarders",
+        "from_addr": "customs@globalfreight-fake.com",
+        "subject": "Customs clearance — Air freight batch cleared at Heathrow",
+        "body": "Good news. The high-priority air freight batch has cleared UK customs at Heathrow without any duties held. It will be out for last-mile delivery this afternoon.",
+    },
+    {
+        "from_name": "MexiFab",
+        "from_addr": "onboarding@mexifab-fake.com",
+        "subject": "Supplier onboarding — Initial audit passed in Monterrey",
+        "body": "Our new Monterrey facility has passed your initial quality audit. We are ready to begin the pilot production run of 50 units next week as discussed.",
+    },
+    {
+        "from_name": "Midwest Rail",
+        "from_addr": "updates@midwestrail-fake.com",
+        "subject": "Transit delay — Rail shipment from Chicago delayed",
+        "body": "Minor update: The rail cars carrying your automotive parts out of Chicago are currently delayed by approximately 2 days due to standard rail yard congestion.",
+    },
+    {
+        "from_name": "Gulf Metals",
+        "from_addr": "supply@gulfmetals-fake.com",
+        "subject": "Material shortage warning — Aluminum ingots low",
+        "body": "Please be advised that our aluminum ingot stockpile at the Dubai smelter is running lower than usual. We don't anticipate missing your current order, but future orders may face lead times.",
+    },
+    {
+        "from_name": "Texonics",
+        "from_addr": "receiving@texonics-fake.com",
+        "subject": "Shipment received — 10 pallets arrived in Austin",
+        "body": "Confirming that the 10 pallets of resistors from your Shenzhen supplier arrived safely at our Austin assembly plant today. No visible damage to the packaging.",
+    },
+    {
+        "from_name": "Bengal Textiles",
+        "from_addr": "orders@bengaltextiles-fake.com",
+        "subject": "Order modification — Quantity increased for Q4",
+        "body": "We have received your revised PO and updated our systems. The quantity for the Q4 apparel shipment from Dhaka has been increased by 15%.",
+    },
+    {
+        "from_name": "Crystal Glass",
+        "from_addr": "qa@crystalglass-fake.com",
+        "subject": "Quality alert — Minor variance detected in Mumbai",
+        "body": "During spot checks at our Mumbai factory, we noted a minor 2mm thickness variance in the latest batch of glass panels. We are reviewing if this falls within acceptable tolerances.",
+    },
+    {
+        "from_name": "Nippon Parts",
+        "from_addr": "notices@nipponparts-fake.com",
+        "subject": "Holiday closure notice — Tokyo facility closed for Golden Week",
+        "body": "Please remember that our Tokyo facility will be closed entirely next week in observance of the Golden Week holidays. Operations will resume the following Monday.",
+    }
 ]
 
 

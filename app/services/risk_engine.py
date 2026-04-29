@@ -1,11 +1,13 @@
 """
 Predictive Risk Engine — Gemini-powered cross-reference analysis.
 
-This engine does NOT just scan individual emails for disaster keywords.
-Instead, it:
-1. Extracts operational state from normal emails (supplier, location, ETA)
-2. Reads real-time world news headlines
-3. Uses Gemini to cross-reference them and PREDICT disruptions
+Two-tier system:
+  Tier 1 - REACTIVE: Analyzes individual emails for operational signals
+            (delays, shortages, quality issues from the sender themselves).
+  Tier 2 - PREDICTIVE: Feeds batches of normal emails + world news into
+            Gemini to find hidden connections and predict future disruptions.
+
+News articles are NEVER analyzed individually — they are context for Gemini only.
 """
 from __future__ import annotations
 
@@ -27,30 +29,30 @@ except Exception:
 
 
 # ---------------------------------------------------------------------------
-# Heuristic fallback maps (used when Gemini is unavailable)
+# Keyword maps — used ONLY for individual email reactive analysis
+# (NOT for news events)
 # ---------------------------------------------------------------------------
-SEVERITY_KEYWORDS = {
+EMAIL_SEVERITY_KEYWORDS = {
     "critical": [
-        "bankruptcy", "factory fire", "plant shutdown", "embargo",
-        "sanction", "war", "insolvency",
+        "plant shutdown", "factory fire", "bankruptcy", "insolvency",
+        "halt production", "force majeure",
     ],
     "high": [
-        "port congestion", "strike", "export ban", "flood",
-        "earthquake", "cyberattack", "quality recall", "delay",
+        "strike", "cyberattack", "quality recall", "production stopped",
+        "major delay", "flood", "earthquake",
     ],
     "medium": [
-        "price increase", "capacity constraint", "shortage",
-        "late shipment", "backlog", "weather alert",
+        "shortage", "capacity constraint", "late shipment",
+        "backlog", "minor delay", "variance detected",
     ],
 }
 
 DISRUPTION_TYPES = {
     "financial": ["bankruptcy", "insolvency"],
-    "logistics": ["delay", "port congestion", "late shipment", "strike"],
-    "geopolitical": ["war", "sanction", "embargo", "export ban"],
-    "natural_disaster": ["flood", "earthquake", "weather alert", "hurricane", "typhoon"],
-    "operations": ["factory fire", "plant shutdown", "capacity constraint", "shortage"],
-    "quality": ["quality recall"],
+    "logistics": ["delay", "late shipment", "strike", "backlog"],
+    "geopolitical": ["sanction", "embargo", "export ban"],
+    "natural_disaster": ["flood", "earthquake", "hurricane", "typhoon"],
+    "operations": ["factory fire", "plant shutdown", "capacity constraint", "shortage", "variance"],
     "security": ["cyberattack"],
 }
 
@@ -77,29 +79,8 @@ RECOMMENDATION_MAP = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Location keyword map for heuristic geographic matching
-# ---------------------------------------------------------------------------
-LOCATION_KEYWORDS = {
-    "shanghai": ["shanghai", "china", "chinese"],
-    "taipei": ["taipei", "taiwan", "taiwanese"],
-    "tokyo": ["tokyo", "japan", "japanese"],
-    "busan": ["busan", "korea", "korean"],
-    "los angeles": ["los angeles", "la port", "long beach", "california", "west coast"],
-    "rotterdam": ["rotterdam", "netherlands", "dutch", "europe"],
-    "newark": ["newark", "new jersey", "east coast"],
-    "guangzhou": ["guangzhou", "guangdong", "south china"],
-    "ho chi minh": ["ho chi minh", "vietnam", "vietnamese", "hcmc"],
-    "gujarat": ["gujarat", "india", "indian", "mundra"],
-    "suez": ["suez", "suez canal"],
-    "hormuz": ["hormuz", "strait of hormuz", "persian gulf"],
-    "panama": ["panama", "panama canal"],
-    "singapore": ["singapore", "malacca"],
-}
-
-
 class RiskAnalyzer:
-    """Predictive risk engine that cross-references emails with news."""
+    """Predictive risk engine."""
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -109,18 +90,35 @@ class RiskAnalyzer:
         if genai and settings.gemini_api_key:
             try:
                 self._gemini_client = genai.Client(api_key=settings.gemini_api_key)
-                logger.info("Gemini client initialized for predictive analysis")
+                logger.info(f"Gemini client initialized: model={self._gemini_model}")
             except Exception as e:
                 logger.warning(f"Gemini init failed: {e}")
 
     # -----------------------------------------------------------------------
-    # Public API
+    # Tier 1: Reactive — analyze a SINGLE EMAIL for self-reported problems
     # -----------------------------------------------------------------------
 
     def analyze_event(self, event: dict[str, Any]) -> RiskAssessment:
-        """Analyze a single event (email or news) for risk signals."""
+        """
+        Analyze a single event for risk.
+
+        IMPORTANT: News events are NOT scored here — they are inputs to
+        Gemini's cross-reference, not risk assessments themselves.
+        Only operational emails (supplier_email, live_email, inventory) are scored.
+        """
+        source = str(event.get("source", ""))
+        is_news = "news" in source.lower()
+
+        if is_news:
+            # Return a neutral placeholder — news is used in cross-reference only
+            return self._neutral_news_placeholder(event)
+
         text = str(event.get("text", ""))
-        return self._heuristic_assessment(event=event, text=text)
+        return self._email_heuristic_assessment(event=event, text=text.lower())
+
+    # -----------------------------------------------------------------------
+    # Tier 2: Predictive — Gemini cross-reference emails x news
+    # -----------------------------------------------------------------------
 
     def cross_reference(
         self,
@@ -128,31 +126,32 @@ class RiskAnalyzer:
         news_events: list[dict[str, Any]],
     ) -> list[RiskAssessment]:
         """
-        The core predictive engine.
-
-        Takes normal operational emails and real-time news, then uses Gemini
-        to predict which operations might be impacted by current world events.
+        Core predictive engine.
+        Takes normal operational emails + real-time news, asks Gemini to find
+        connections and predict future disruptions before they happen.
         """
         if not operations or not news_events:
+            logger.info("Cross-reference skipped: no operations or no news")
             return []
 
         if self._gemini_client:
             return self._gemini_cross_reference(operations, news_events)
         else:
+            logger.warning("Gemini unavailable — using geographic heuristic fallback")
             return self._heuristic_cross_reference(operations, news_events)
 
     def answer_question(
         self, question: str, contexts: list[RetrievedContext]
     ) -> tuple[str, list[str]]:
-        """Answer a supply chain advisory question."""
+        """Answer a supply chain advisory question using Gemini."""
         joined = "\n".join([f"- [{c.source}] {c.text}" for c in contexts[:6]])
         if self._gemini_client:
             try:
                 prompt = (
-                    "You are a supply chain disruption advisor.\n"
+                    "You are an expert supply chain disruption advisor.\n"
                     "Use the provided context to answer clearly and suggest practical mitigation actions.\n"
                     f"Question: {question}\n\nContext:\n{joined}\n"
-                    "Return plain text with a concise answer and bullet recommendations."
+                    "Return plain text with a concise answer followed by bullet recommendations."
                 )
                 response = self._gemini_client.models.generate_content(
                     model=self._gemini_model,
@@ -160,9 +159,9 @@ class RiskAnalyzer:
                 )
                 text = response.text.strip()
                 recs = [
-                    line.lstrip("- ").strip()
+                    line.lstrip("- •").strip()
                     for line in text.splitlines()
-                    if line.strip().startswith("-")
+                    if line.strip().startswith(("-", "•"))
                 ]
                 return text, recs[:5]
             except Exception as e:
@@ -170,7 +169,7 @@ class RiskAnalyzer:
         return self._heuristic_chat_answer(question, contexts)
 
     # -----------------------------------------------------------------------
-    # Gemini-powered cross-reference (the magic)
+    # Gemini cross-reference
     # -----------------------------------------------------------------------
 
     def _gemini_cross_reference(
@@ -178,40 +177,41 @@ class RiskAnalyzer:
         operations: list[dict[str, Any]],
         news_events: list[dict[str, Any]],
     ) -> list[RiskAssessment]:
-        """Use Gemini to cross-reference operations with news."""
-        predictions: list[RiskAssessment] = []
-
-        # Build a compact summary of all active operations
+        """Use Gemini to cross-reference operations with news headlines."""
         ops_summary = self._build_operations_summary(operations)
-
-        # Build a compact summary of all news headlines
         news_summary = self._build_news_summary(news_events)
 
-        prompt = f"""You are an expert supply chain risk analyst. Your job is to PREDICT disruptions by cross-referencing normal operational data with current world news.
+        prompt = f"""You are an expert supply chain risk analyst.
 
 ## Active Supply Chain Operations
 {ops_summary}
 
-## Current World News
+## Current World News Headlines
 {news_summary}
 
-## Your Task
-Analyze the news headlines and identify which of the active operations above could be affected. For each potential impact, return a JSON object.
+## Task
+Identify which active operations could be disrupted by current world events.
+Consider geographic overlap, material type, trade routes, geopolitical tensions,
+weather events, and sanctions.
 
-IMPORTANT: Only flag genuine geographic or thematic connections. If a news article about a flood in India has no connection to any operation, skip it.
+Rules:
+- Only report genuine, specific connections — do NOT flag everything.
+- A shipment from Shanghai is affected by China trade war news.
+- A chemical shipment from Gujarat is affected by Indian port/weather news.
+- A booking via Busan is affected by Korea/Pacific shipping disruptions.
+- Do NOT flag Canada whiskey tariffs as affecting a polymer shipment from Munich.
 
-Return a JSON array of predictions. Each prediction must have:
-- "operation_index": (int) index of the affected operation (0-based)
-- "news_index": (int) index of the news article causing the risk (0-based)
+For each genuine connection, return a JSON object with:
+- "operation_index": (int) 0-based index of the affected operation
+- "news_index": (int) 0-based index of the causative news article
 - "severity": "critical" | "high" | "medium" | "low"
 - "disruption_type": "logistics" | "geopolitical" | "natural_disaster" | "financial" | "operations" | "security"
-- "confidence": (float 0.0-1.0)
-- "prediction": (string) A clear 1-2 sentence explanation of WHY this news affects this operation
-- "recommendations": (array of 2-3 actionable strings)
+- "confidence": (float 0.0-1.0) — be honest, not everything is 0.9+
+- "prediction": (string) 1-2 sentences explaining the exact connection
+- "recommendations": (array) 2-3 specific actionable steps
 
-If no connections exist, return an empty array: []
-
-Return ONLY the JSON array, no other text."""
+Return ONLY a valid JSON array. No markdown, no code fences, no extra text.
+If no genuine connections exist, return: []"""
 
         try:
             response = self._gemini_client.models.generate_content(
@@ -220,21 +220,27 @@ Return ONLY the JSON array, no other text."""
             )
             raw = response.text.strip()
 
+            # Strip markdown code fences if Gemini wraps the response
+            raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+            raw = re.sub(r"\s*```$", "", raw)
+            raw = raw.strip()
+
             # Extract JSON array
             match = re.search(r"\[.*\]", raw, re.DOTALL)
             if not match:
-                logger.warning("Gemini returned no valid JSON array")
+                logger.warning(f"Gemini returned no valid JSON array. Raw: {raw[:200]}")
                 return self._heuristic_cross_reference(operations, news_events)
 
             results = json.loads(match.group(0))
 
+            predictions: list[RiskAssessment] = []
             for pred in results:
                 op_idx = int(pred.get("operation_index", -1))
                 news_idx = int(pred.get("news_index", -1))
 
-                if op_idx < 0 or op_idx >= len(operations):
+                if not (0 <= op_idx < len(operations)):
                     continue
-                if news_idx < 0 or news_idx >= len(news_events):
+                if not (0 <= news_idx < len(news_events)):
                     continue
 
                 op = operations[op_idx]
@@ -243,16 +249,19 @@ Return ONLY the JSON array, no other text."""
                 if severity not in {"low", "medium", "high", "critical"}:
                     severity = "medium"
 
-                # Build the headline showing the connection
-                op_supplier = op.get("supplier", op.get("metadata", {}).get("sender_name", "Unknown"))
+                op_supplier = (
+                    op.get("supplier")
+                    or op.get("metadata", {}).get("sender_name")
+                    or "Unknown Supplier"
+                )
                 news_headline = self._clean_text(
                     news.get("metadata", {}).get("title", "")
                     or news.get("text", "")[:80]
                 )
-
-                headline = f"⚠️ {op_supplier} shipment may be impacted"
                 prediction_text = str(pred.get("prediction", ""))
-                recommendations = [str(r) for r in pred.get("recommendations", RECOMMENDATION_MAP[severity])]
+                recommendations = [
+                    str(r) for r in pred.get("recommendations", RECOMMENDATION_MAP[severity])
+                ]
 
                 predictions.append(RiskAssessment(
                     risk_id=f"predict-{op_idx}-{news_idx}",
@@ -265,10 +274,13 @@ Return ONLY the JSON array, no other text."""
                     signals=[f"Email: {op_supplier}", f"News: {news_headline[:60]}"],
                     recommendations=recommendations[:3],
                     summary=prediction_text,
-                    headline=headline,
+                    headline=f"\u26a0\ufe0f {op_supplier} — predicted disruption",
                     metadata={
                         "type": "prediction",
-                        "email_subject": op.get("metadata", {}).get("subject", op.get("text", "")[:60]),
+                        "email_subject": (
+                            op.get("metadata", {}).get("subject", "")
+                            or op.get("text", "")[:60]
+                        ),
                         "email_supplier": op_supplier,
                         "email_origin": op.get("metadata", {}).get("origin_location", ""),
                         "news_headline": news_headline,
@@ -286,55 +298,90 @@ Return ONLY the JSON array, no other text."""
             return self._heuristic_cross_reference(operations, news_events)
 
     # -----------------------------------------------------------------------
-    # Heuristic cross-reference (fallback when Gemini is unavailable)
+    # Heuristic cross-reference fallback
     # -----------------------------------------------------------------------
+
+    LOCATION_KEYWORDS: dict[str, list[str]] = {
+        "shanghai": ["shanghai", "china", "chinese"],
+        "taipei": ["taipei", "taiwan", "taiwanese"],
+        "tokyo": ["tokyo", "japan", "japanese"],
+        "busan": ["busan", "korea", "korean"],
+        "los angeles": ["los angeles", "la port", "long beach", "west coast"],
+        "rotterdam": ["rotterdam", "netherlands", "dutch"],
+        "guangzhou": ["guangzhou", "guangdong", "south china"],
+        "ho chi minh": ["ho chi minh", "vietnam", "vietnamese", "hcmc"],
+        "gujarat": ["gujarat", "india", "indian", "mundra"],
+        "dubai": ["dubai", "uae", "gulf"],
+        "manila": ["manila", "philippines", "philippine"],
+        "dhaka": ["dhaka", "bangladesh"],
+        "mumbai": ["mumbai", "bombay"],
+        "monterrey": ["monterrey", "mexico", "mexican"],
+        "chicago": ["chicago", "midwest", "illinois"],
+        "london": ["london", "heathrow", "uk", "britain"],
+        "perth": ["perth", "australia", "australian"],
+        "suez": ["suez", "suez canal"],
+        "hormuz": ["hormuz", "persian gulf"],
+    }
+
+    HEURISTIC_NEWS_SEVERITY: dict[str, list[str]] = {
+        "critical": ["war", "conflict", "sanctions", "embargo", "ban", "shutdown", "fire", "bankruptcy"],
+        "high": ["strike", "flood", "earthquake", "typhoon", "hurricane", "cyberattack", "disruption", "congestion"],
+        "medium": ["delay", "shortage", "tension", "tariff", "dispute"],
+    }
 
     def _heuristic_cross_reference(
         self,
         operations: list[dict[str, Any]],
         news_events: list[dict[str, Any]],
     ) -> list[RiskAssessment]:
-        """Geographic keyword matching fallback."""
+        """Geographic keyword fallback — only used when Gemini is unavailable."""
         predictions: list[RiskAssessment] = []
+        seen: set[str] = set()
 
         for op_idx, op in enumerate(operations):
             op_text = str(op.get("text", "")).lower()
-            op_supplier = op.get("supplier", op.get("metadata", {}).get("sender_name", "Unknown"))
+            op_supplier = (
+                op.get("supplier")
+                or op.get("metadata", {}).get("sender_name")
+                or "Unknown"
+            )
 
-            # Find which locations this operation touches
-            op_locations = set()
-            for loc_key, keywords in LOCATION_KEYWORDS.items():
-                if any(kw in op_text for kw in keywords):
-                    op_locations.add(loc_key)
-
+            op_locations = {
+                loc for loc, kws in self.LOCATION_KEYWORDS.items()
+                if any(kw in op_text for kw in kws)
+            }
             if not op_locations:
                 continue
 
-            # Check each news event for geographic overlap
             for news_idx, news in enumerate(news_events):
                 news_text = str(news.get("text", "")).lower()
-                news_headline = self._clean_text(
-                    news.get("metadata", {}).get("title", "")
-                    or news.get("text", "")[:80]
-                )
+                news_locations = {
+                    loc for loc, kws in self.LOCATION_KEYWORDS.items()
+                    if any(kw in news_text for kw in kws)
+                }
 
-                # Find locations mentioned in the news
-                news_locations = set()
-                for loc_key, keywords in LOCATION_KEYWORDS.items():
-                    if any(kw in news_text for kw in keywords):
-                        news_locations.add(loc_key)
-
-                # Check for overlap
                 overlap = op_locations & news_locations
                 if not overlap:
                     continue
 
-                # Determine severity from the news content
-                severity = self._infer_severity(news_text)
-                if severity == "low":
-                    continue  # Skip low-severity news matches
+                # Determine severity from news content using word boundaries
+                severity = "low"
+                for sev, terms in self.HEURISTIC_NEWS_SEVERITY.items():
+                    if any(re.search(r"\b" + re.escape(t) + r"\b", news_text) for t in terms):
+                        severity = sev
+                        break
 
-                disruption_type = self._infer_disruption_type(news_text)
+                if severity == "low":
+                    continue
+
+                key = f"{op_idx}-{news_idx}"
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                news_headline = self._clean_text(
+                    news.get("metadata", {}).get("title", "") or news.get("text", "")[:80]
+                )
                 location_str = ", ".join(overlap)
 
                 predictions.append(RiskAssessment(
@@ -342,24 +389,22 @@ Return ONLY the JSON array, no other text."""
                     source="predictive_analysis",
                     reference_id=f"op{op_idx}-news{news_idx}",
                     detected_at=datetime.now(timezone.utc),
-                    disruption_type=disruption_type,
+                    disruption_type="geopolitical",
                     severity=severity,
-                    confidence={"critical": 0.85, "high": 0.75, "medium": 0.65}.get(severity, 0.5),
-                    signals=[f"Email: {op_supplier}", f"News: {news_headline[:60]}", f"Location: {location_str}"],
+                    confidence={"critical": 0.72, "high": 0.60, "medium": 0.50}.get(severity, 0.40),
+                    signals=[f"Email: {op_supplier}", f"Location match: {location_str}"],
                     recommendations=RECOMMENDATION_MAP[severity],
                     summary=(
-                        f"News about {disruption_type.replace('_', ' ')} near {location_str} "
-                        f"may affect {op_supplier}'s operations. "
+                        f"Geographic overlap detected at {location_str}. "
                         f"News: \"{news_headline[:100]}\""
                     ),
-                    headline=f"⚠️ {op_supplier} shipment may be impacted",
+                    headline=f"\u26a0\ufe0f {op_supplier} — geographic risk overlap",
                     metadata={
                         "type": "prediction",
                         "email_subject": op.get("metadata", {}).get("subject", ""),
                         "email_supplier": op_supplier,
                         "email_origin": location_str,
                         "news_headline": news_headline,
-                        "news_source": news.get("source", ""),
                         "prediction": f"Geographic match: {location_str}",
                         "sender_name": op_supplier,
                     },
@@ -369,62 +414,51 @@ Return ONLY the JSON array, no other text."""
         return predictions
 
     # -----------------------------------------------------------------------
-    # Helpers
+    # Individual email heuristic assessment (Tier 1 reactive)
     # -----------------------------------------------------------------------
 
-    def _build_operations_summary(self, operations: list[dict[str, Any]]) -> str:
-        """Build a concise text summary of active operations for the LLM prompt."""
-        lines = []
-        for i, op in enumerate(operations):
-            supplier = op.get("supplier", op.get("metadata", {}).get("sender_name", "Unknown"))
-            text = str(op.get("text", ""))[:200]
-            meta = op.get("metadata", {})
-            origin = meta.get("origin_location", "")
-            eta = meta.get("eta_days", "")
-            material = meta.get("material", "")
-            lines.append(
-                f"[{i}] Supplier: {supplier} | Origin: {origin} | ETA: {eta} days | "
-                f"Material: {material} | Details: {text}"
-            )
-        return "\n".join(lines)
+    def _email_heuristic_assessment(self, event: dict[str, Any], text: str) -> RiskAssessment:
+        """Score a single operational email for self-reported problems."""
+        severity = "low"
+        for sev, terms in EMAIL_SEVERITY_KEYWORDS.items():
+            if any(re.search(r"\b" + re.escape(t) + r"\b", text) for t in terms):
+                severity = sev
+                break
 
-    def _build_news_summary(self, news_events: list[dict[str, Any]]) -> str:
-        """Build a concise text summary of news for the LLM prompt."""
-        lines = []
-        for i, news in enumerate(news_events):
-            headline = self._clean_text(
-                news.get("metadata", {}).get("title", "")
-                or news.get("text", "")[:120]
-            )
-            source = news.get("source", "unknown")
-            lines.append(f"[{i}] ({source}) {headline}")
-        return "\n".join(lines[:30])  # cap at 30 headlines
+        disruption_type = "operations"
+        for dtype, terms in DISRUPTION_TYPES.items():
+            if any(re.search(r"\b" + re.escape(t) + r"\b", text) for t in terms):
+                disruption_type = dtype
+                break
 
-    def _heuristic_assessment(self, event: dict[str, Any], text: str) -> RiskAssessment:
-        """Keyword-based assessment for individual events."""
-        low_text = text.lower()
-        severity = self._infer_severity(low_text)
-        disruption_type = self._infer_disruption_type(low_text)
-        signals = self._extract_signals(low_text)
+        # Extract matched signals
+        signals: list[str] = []
+        for terms in EMAIL_SEVERITY_KEYWORDS.values():
+            for t in terms:
+                if re.search(r"\b" + re.escape(t) + r"\b", text) and t not in signals:
+                    signals.append(t)
+        if not signals:
+            signals = ["routine operational update"]
+
+        confidence = {"critical": 0.91, "high": 0.79, "medium": 0.66, "low": 0.52}[severity]
         metadata = dict(event.get("metadata", {})) if isinstance(event.get("metadata"), dict) else {}
-        confidence = {"critical": 0.93, "high": 0.83, "medium": 0.72, "low": 0.58}[severity]
 
-        headline = ""
-        risk_reason = self._build_risk_reason(severity, disruption_type, signals)
+        supplier = (
+            event.get("supplier")
+            or metadata.get("sender_name")
+            or "Unknown Supplier"
+        )
+        subject = metadata.get("subject", event.get("text", "")[:60])
 
-        if self._is_news_event(event):
-            headline, article_excerpt = self._extract_news_content(event=event, text=text)
-            summary = article_excerpt if article_excerpt else risk_reason
-            metadata.setdefault("article_excerpt", article_excerpt)
-            metadata.setdefault("title", headline)
-        else:
-            summary = risk_reason
-
-        metadata["risk_reason"] = risk_reason
-        metadata["matched_signals"] = signals
+        summary = (
+            f"Supplier email from {supplier} flagged as {severity.upper()} "
+            f"due to: {', '.join(signals[:3])}."
+            if severity != "low"
+            else f"Routine operational email from {supplier}. No immediate risk signals."
+        )
 
         return RiskAssessment(
-            risk_id=f"{event.get('source')}-{event.get('reference_id')}",
+            risk_id=f"{event.get('source')}-{event.get('reference_id', '')}",
             source=event.get("source", "unknown"),
             reference_id=str(event.get("reference_id", "")),
             detected_at=datetime.now(timezone.utc),
@@ -434,76 +468,76 @@ Return ONLY the JSON array, no other text."""
             signals=signals,
             recommendations=RECOMMENDATION_MAP[severity],
             summary=summary,
-            headline=headline,
-            metadata=metadata,
+            headline=subject,
+            metadata={**metadata, "sender_name": supplier, "matched_signals": signals},
         )
 
-    def _heuristic_chat_answer(
-        self, question: str, contexts: list[RetrievedContext]
-    ) -> tuple[str, list[str]]:
-        compiled_text = " ".join(c.text.lower() for c in contexts)
-        severity = self._infer_severity(compiled_text)
-        recs = RECOMMENDATION_MAP[severity]
-        answer = (
-            f"Likely disruption exposure is **{severity.upper()}** based on retrieved context. "
-            "Primary risks indicate potential delays in material availability and production continuity."
+    def _neutral_news_placeholder(self, event: dict[str, Any]) -> RiskAssessment:
+        """Placeholder for news events — they are context only, not individual risks."""
+        metadata = dict(event.get("metadata", {})) if isinstance(event.get("metadata"), dict) else {}
+        title = self._clean_text(metadata.get("title", "") or event.get("text", "")[:80])
+        return RiskAssessment(
+            risk_id=f"news-{event.get('reference_id', '')}",
+            source=event.get("source", "news_feed"),
+            reference_id=str(event.get("reference_id", "")),
+            detected_at=datetime.now(timezone.utc),
+            disruption_type="operations",
+            severity="low",
+            confidence=0.0,
+            signals=[],
+            recommendations=[],
+            summary=title,
+            headline=title,
+            metadata={**metadata, "_news_context_only": True},
         )
-        return answer, recs
 
-    def _is_news_event(self, event: dict[str, Any]) -> bool:
-        return "news" in str(event.get("source", "")).lower()
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
+
+    def _build_operations_summary(self, operations: list[dict[str, Any]]) -> str:
+        lines = []
+        for i, op in enumerate(operations):
+            supplier = (
+                op.get("supplier")
+                or op.get("metadata", {}).get("sender_name")
+                or "Unknown"
+            )
+            meta = op.get("metadata", {}) or {}
+            subject = meta.get("subject", "")
+            origin = meta.get("origin_location", "")
+            eta = meta.get("eta_days", "")
+            material = meta.get("material", "")
+            body = str(op.get("text", ""))[:250]
+            lines.append(
+                f"[{i}] Supplier: {supplier} | Subject: {subject} | "
+                f"Origin: {origin} | ETA: {eta} days | Material: {material} | "
+                f"Body excerpt: {body}"
+            )
+        return "\n".join(lines)
+
+    def _build_news_summary(self, news_events: list[dict[str, Any]]) -> str:
+        lines = []
+        for i, news in enumerate(news_events[:40]):  # cap at 40
+            headline = self._clean_text(
+                news.get("metadata", {}).get("title", "")
+                or news.get("text", "")[:120]
+            )
+            source = news.get("source", "")
+            lines.append(f"[{i}] ({source}) {headline}")
+        return "\n".join(lines)
 
     def _clean_text(self, value: Any) -> str:
         cleaned = re.sub(r"<[^>]+>", " ", str(value or ""))
         cleaned = re.sub(r"\s+", " ", cleaned)
         return cleaned.strip()
 
-    def _extract_news_content(self, event: dict[str, Any], text: str) -> tuple[str, str]:
-        metadata = event.get("metadata", {}) if isinstance(event.get("metadata"), dict) else {}
-        headline = self._clean_text(metadata.get("title") or metadata.get("headline") or "")
-        article_excerpt = self._clean_text(metadata.get("summary") or metadata.get("content") or "")
-
-        if not headline:
-            first_sentence = text.split(". ", 1)[0] if ". " in text else text
-            headline = self._clean_text(first_sentence)
-
-        if not article_excerpt:
-            if ". " in text:
-                parts = text.split(". ", 1)
-                article_excerpt = self._clean_text(parts[1]) if len(parts) > 1 else self._clean_text(text)
-            else:
-                article_excerpt = self._clean_text(text)
-
-        return headline[:180], article_excerpt[:450]
-
-    def _build_risk_reason(self, severity: str, disruption_type: str, signals: list[str]) -> str:
-        normalized_type = disruption_type.replace("_", " ")
-        signal_text = ", ".join(signals[:4]) if signals else "contextual disruption indicators"
-        return (
-            f"Classified as {severity.upper()} {normalized_type} risk due to detected signals: "
-            f"{signal_text}."
+    def _heuristic_chat_answer(
+        self, question: str, contexts: list[RetrievedContext]
+    ) -> tuple[str, list[str]]:
+        recs = RECOMMENDATION_MAP["medium"]
+        answer = (
+            "Based on retrieved context, supply chain risk exposure is moderate. "
+            "Primary risks include potential delays in material availability."
         )
-
-    def _match_keyword(self, term: str, text: str) -> bool:
-        """Check if a keyword appears as a whole word (not inside another word)."""
-        return bool(re.search(r'\b' + re.escape(term) + r'\b', text))
-
-    def _infer_severity(self, text: str) -> str:
-        for severity, terms in SEVERITY_KEYWORDS.items():
-            if any(self._match_keyword(term, text) for term in terms):
-                return severity
-        return "low"
-
-    def _infer_disruption_type(self, text: str) -> str:
-        for disruption_type, terms in DISRUPTION_TYPES.items():
-            if any(self._match_keyword(term, text) for term in terms):
-                return disruption_type
-        return "operations"
-
-    def _extract_signals(self, text: str) -> list[str]:
-        found: list[str] = []
-        for terms in SEVERITY_KEYWORDS.values():
-            for term in terms:
-                if self._match_keyword(term, text) and term not in found:
-                    found.append(term)
-        return found[:6] if found else ["monitoring signal"]
+        return answer, recs

@@ -25,7 +25,8 @@ def test_detects_low_when_no_signal() -> None:
     assert result.severity == "low"
 
 
-def test_news_result_contains_readable_details_and_reason() -> None:
+def test_news_events_are_neutral_context() -> None:
+    """News events should NOT be individually scored — they are context for Gemini."""
     analyzer = RiskAnalyzer()
     event = {
         "source": "global_news",
@@ -36,12 +37,44 @@ def test_news_result_contains_readable_details_and_reason() -> None:
         ),
         "metadata": {
             "title": "Port worker strike intensifies",
-            "summary": "Logistics experts report severe port congestion and vessel backlog across key terminals.",
+            "summary": "Logistics experts report severe port congestion and vessel backlog.",
             "link": "https://example.com/article",
         },
     }
     result = analyzer.analyze_event(event)
-    assert result.headline
-    assert result.summary
-    assert result.metadata.get("risk_reason")
-    assert result.metadata.get("article_excerpt")
+    # News events should be low/neutral placeholders, not CRITICAL
+    assert result.severity == "low"
+    assert result.confidence == 0.0
+    assert result.metadata.get("_news_context_only") is True
+    assert result.headline  # Should still have the title
+
+
+def test_email_with_self_reported_problem_is_flagged() -> None:
+    """Emails that self-report a problem (delay, shortage) should be flagged."""
+    analyzer = RiskAnalyzer()
+    event = {
+        "source": "live_email",
+        "reference_id": "E1",
+        "supplier": "Gulf Metals",
+        "text": "Material shortage warning — Aluminum ingots low. Our stockpile is running lower than usual.",
+        "metadata": {"sender_name": "Gulf Metals", "subject": "Material shortage warning"},
+    }
+    result = analyzer.analyze_event(event)
+    assert result.severity == "medium"
+    assert "shortage" in result.signals
+
+
+def test_boring_email_is_low() -> None:
+    """Routine operational emails should be LOW severity."""
+    analyzer = RiskAnalyzer()
+    event = {
+        "source": "live_email",
+        "reference_id": "E2",
+        "supplier": "Alpha Metals",
+        "text": "Shipment confirmation — Order AM-4421 copper coil dispatched from our Shanghai warehouse. ETA 14 days.",
+        "metadata": {"sender_name": "Alpha Metals", "subject": "Shipment confirmation"},
+    }
+    result = analyzer.analyze_event(event)
+    assert result.severity == "low"
+    assert result.confidence < 0.6
+
