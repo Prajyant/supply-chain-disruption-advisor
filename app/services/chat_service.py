@@ -9,9 +9,16 @@ logger = logging.getLogger(__name__)
 
 class ChatService:
     """Service for AI-powered chat advisory."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.vector_index = None
+        return cls._instance
 
     def __init__(self) -> None:
-        self.vector_index: Optional[RetrievalIndex] = None
+        pass
 
     def set_index(self, index: RetrievalIndex) -> None:
         """Set the vector index for retrieval.

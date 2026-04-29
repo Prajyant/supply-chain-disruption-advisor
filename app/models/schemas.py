@@ -13,6 +13,7 @@ class IngestRequest(BaseModel):
     news_feed_path: str = "data/news_feed.csv"
     inventory_path: str = "data/inventory.csv"
     use_realtime_news: bool = True
+    use_live_emails: bool = False  # If True, reads from live Gmail inbox instead of CSV
 
 
 class IngestResponse(BaseModel):
