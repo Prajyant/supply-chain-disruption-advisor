@@ -22,11 +22,11 @@ export function Dashboard() {
     setRisks(risks);
   }
 
-  const criticalRisks = risks?.filter((r) => r.severity === 'critical') || [];
-  const highRisks = risks?.filter((r) => r.severity === 'high') || [];
+  const criticalRisks = risks?.filter((r: any) => r.severity === 'critical') || [];
+  const highRisks = risks?.filter((r: any) => r.severity === 'high') || [];
   const avgConfidence =
     risks && risks.length > 0
-      ? Math.round((risks.reduce((sum, r) => sum + r.confidence, 0) / risks.length) * 100)
+      ? Math.round((risks.reduce((sum: number, r: any) => sum + r.confidence, 0) / risks.length) * 100)
       : 0;
 
   const metrics = [
@@ -126,7 +126,7 @@ export function Dashboard() {
         <h2 className="text-lg font-semibold text-white mb-4">Recent Risk Assessments</h2>
         {risks && risks.length > 0 ? (
           <div className="grid grid-cols-2 gap-4">
-            {risks.slice(0, 10).map((risk) => (
+            {risks.slice(0, 10).map((risk: any) => (
               <RiskCard key={risk.risk_id} risk={risk} />
             ))}
           </div>

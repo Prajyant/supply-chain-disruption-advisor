@@ -6,7 +6,24 @@
       "Bash(curl -s -X POST http://localhost:8000/ingest -H \"Content-Type: application/json\" -d '{\"supplier_emails_path\": \"data/supplier_emails.csv\", \"news_feed_path\": \"data/news_feed.csv\", \"inventory_path\": \"data/inventory.csv\", \"use_realtime_news\": true}')",
       "Bash(curl -s http://localhost:8000/risks)",
       "Bash(python -m json.tool)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(npm run *)",
+      "Bash(npm list *)",
+      "Bash(curl -s http://localhost:3000/src/pages/Login.tsx)",
+      "Bash(curl -s http://localhost:3000/src/store/authStore.ts)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000/src/services/api.ts)",
+      "Bash(curl -s \"http://localhost:3000/src/App.tsx\")",
+      "Bash(curl -s \"http://localhost:3000/\")",
+      "Bash(curl -s -v http://localhost:3003/@fs/Users/prajy/OneDrive/Desktop/supply-chain-disruption-advisor/frontend/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=7621b723)",
+      "Bash(curl -s -v http://localhost:3003/@fs/Users/prajy/OneDrive/Desktop/supply-chain-disruption-advisor/frontend/node_modules/.vite/deps/@tanstack_react-query.js?v=a54a6927)",
+      "Bash(curl -s -v http://localhost:3003/@fs/Users/prajy/OneDrive/Desktop/supply-chain-disruption-advisor/frontend/node_modules/.vite/deps/react-router-dom.js?v=f9653780)",
+      "Bash(curl -s -v http://localhost:3003/@fs/Users/prajy/OneDrive/Desktop/supply-chain-disruption-advisor/frontend/node_modules/.vite/deps/react-dom_client.js?v=0b976f48)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/node_modules/.vite/deps/react.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/node_modules/.vite/deps/react-dom_client.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/node_modules/.vite/deps/@tanstack_react-query.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/node_modules/vite/dist/client/env.mjs)"
     ]
   }
 }

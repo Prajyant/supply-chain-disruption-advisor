@@ -11,6 +11,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { RefreshCw, Zap } from 'lucide-react';
+import React from 'react';
 
 const nodeTypes = {};
 
@@ -25,7 +26,7 @@ export function DigitalTwin() {
 
   React.useEffect(() => {
     if (network) {
-      const flowNodes: Node[] = network.nodes.map((node) => ({
+      const flowNodes: Node[] = network.nodes.map((node: any) => ({
         id: node.id,
         type: 'default',
         position: { x: Math.random() * 400, y: Math.random() * 400 },
@@ -50,7 +51,7 @@ export function DigitalTwin() {
         },
       }));
 
-      const flowEdges: Edge[] = network.edges.map((edge) => ({
+      const flowEdges: Edge[] = network.edges.map((edge: any) => ({
         id: `${edge.from_node}-${edge.to_node}`,
         source: edge.from_node,
         target: edge.to_node,
