@@ -24,15 +24,17 @@ class RiskService:
         pass
 
     def analyze_events(self, events: list[dict]) -> list[dict]:
-        """Analyze events individually (reactive layer).
+        """Analyze events individually (reactive layer — emails only).
 
         Args:
-            events: List of event dictionaries
+            events: List of email/inventory event dictionaries
 
         Returns:
             List of risk assessment dictionaries
         """
+        # Always reset state on fresh ingestion — prevents stale accumulation
         self._risks = [self.risk_analyzer.analyze_event(event).model_dump() for event in events]
+        self._predictions = []  # Reset predictions too — will be populated by cross_reference
         return self._risks
 
     def cross_reference(
