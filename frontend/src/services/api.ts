@@ -81,6 +81,7 @@ export const ingestApi = {
     news_feed_path?: string;
     inventory_path?: string;
     use_realtime_news?: boolean;
+    use_live_emails?: boolean;
   }) => api.post('/ingest', data),
 };
 
