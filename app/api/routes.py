@@ -306,6 +306,66 @@ def propagate_risk(user: dict = Depends(get_current_user)) -> dict:
     return graph_service.propagate_risk()
 
 
+# ==================== NODE CONTEXT ENDPOINTS ====================
+
+
+@router.get("/node/{node_id}/context")
+def get_node_context(node_id: str, user: dict = Depends(get_current_user)) -> dict:
+    """Get full enriched context ('knowledge card') for a node.
+
+    Called on node click — returns shipments, orders, risk history, news.
+
+    Args:
+        node_id: The node ID
+        user: Current user
+
+    Returns:
+        Full NodeContext dictionary
+
+    Raises:
+        HTTPException: If node not found
+    """
+    context = advisor_service.get_node_context(node_id)
+    if not context:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return context
+
+
+# ==================== SHIPMENT ENDPOINTS ====================
+
+
+@router.get("/shipments")
+def get_shipments(user: dict = Depends(get_current_user)) -> list[dict]:
+    """Get all tracked shipments.
+
+    🔴 CRITICAL FIX #3: This route was referenced in api.ts but
+    was missing from the backend — would 404 on Dashboard load.
+
+    Args:
+        user: Current user
+
+    Returns:
+        List of shipment dictionaries
+    """
+    return advisor_service.get_shipments()
+
+
+@router.get("/shipments/node/{node_id}")
+def get_shipments_for_node(
+    node_id: str, user: dict = Depends(get_current_user)
+) -> list[dict]:
+    """Get all shipments for a specific node.
+
+    Args:
+        node_id: The node ID
+        user: Current user
+
+    Returns:
+        List of shipment dictionaries for this node
+    """
+    return advisor_service.get_shipments_for_node(node_id)
+
+
 # ==================== WEBSOCKET ENDPOINTS ====================
 
 

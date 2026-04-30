@@ -121,6 +121,8 @@ class GraphService:
             cls._instance.graph = SupplyChainGraph()
             cls._instance.propagation_factor = 0.3
             cls._instance.propagation_threshold = 0.6
+            # Precomputed lightweight context summaries per node — avoids N×4 queries
+            cls._instance._context_summary_cache: dict[str, dict] = {}
         return cls._instance
 
     def __init__(self) -> None:
@@ -182,6 +184,11 @@ class GraphService:
                     "risk_score": node.final_risk,
                     "status": node.status.value,
                     "criticality": node.criticality,
+                    # Lightweight summary from cache — NO full context query here
+                    "context_summary": self._context_summary_cache.get(node.id, {
+                        "shipment_count": 0, "order_count": 0,
+                        "risk_count": 0, "has_critical_risk": False,
+                    }),
                 }
                 for node in self.graph.nodes.values()
             ],
@@ -361,3 +368,66 @@ class GraphService:
         node.direct_risk = max(0.0, min(1.0, risk_score))
         self.graph.last_updated = datetime.now(timezone.utc).isoformat()
         return node_id
+
+    def update_context_cache(
+        self, node_id: str, shipment_count: int = 0,
+        order_count: int = 0, risk_count: int = 0,
+        has_critical_risk: bool = False,
+    ) -> None:
+        """Update the lightweight context summary cache for a node.
+
+        Called at ingest time — NOT inside get_network().
+        """
+        self._context_summary_cache[node_id] = {
+            "shipment_count": shipment_count,
+            "order_count": order_count,
+            "risk_count": risk_count,
+            "has_critical_risk": has_critical_risk,
+        }
+
+    def get_node_context(self, node_id: str) -> Optional[dict]:
+        """Get full enriched context for a node (called on node click only).
+
+        Returns the complete 'knowledge card' with shipments, orders,
+        risk history, news, and upstream/downstream impact.
+        """
+        node = self.graph.get_node(node_id)
+        if not node:
+            return None
+
+        upstream = self.graph.get_upstream_nodes(node_id)
+        downstream = self.graph.get_downstream_nodes(node_id)
+
+        return {
+            "id": node.id,
+            "type": node.type.value,
+            "name": node.name,
+            "location": node.location,
+            "risk_score": node.final_risk,
+            "direct_risk": node.direct_risk,
+            "derived_risk": node.derived_risk,
+            "status": node.status.value,
+            "criticality": node.criticality,
+            "financial_exposure_usd": None,
+            "days_buffer": None,
+            "active_shipments": [],
+            "pending_orders": [],
+            "risk_history": [],
+            "connected_news": [],
+            "upstream_nodes": [
+                {"id": n.id, "name": n.name, "type": n.type.value,
+                 "risk_score": n.final_risk, "status": n.status.value,
+                 "location": n.location, "criticality": n.criticality}
+                for n in upstream
+            ],
+            "downstream_nodes": [
+                {"id": n.id, "name": n.name, "type": n.type.value,
+                 "risk_score": n.final_risk, "status": n.status.value,
+                 "location": n.location, "criticality": n.criticality}
+                for n in downstream
+            ],
+            "context_summary": self._context_summary_cache.get(node_id, {
+                "shipment_count": 0, "order_count": 0,
+                "risk_count": 0, "has_critical_risk": False,
+            }),
+        }

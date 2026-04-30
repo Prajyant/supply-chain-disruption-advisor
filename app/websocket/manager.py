@@ -102,6 +102,31 @@ class ConnectionManager:
         }
         await self._broadcast_to_subscribers(self.alert_subscribers, message)
 
+    async def broadcast_shipment_update(
+        self, shipment_id: str, supplier: str, old_status: str, new_status: str
+    ) -> None:
+        """Broadcast a shipment status change to all subscribers.
+
+        🔴 CRITICAL FIX #2: This enables real-time Digital Twin updates
+        when shipment statuses change from email processing.
+
+        Args:
+            shipment_id: The shipment ID
+            supplier: The supplier name
+            old_status: Previous shipment status
+            new_status: New shipment status
+        """
+        message = {
+            "type": "shipment_status_changed",
+            "data": {
+                "shipment_id": shipment_id,
+                "supplier": supplier,
+                "old_status": old_status,
+                "new_status": new_status,
+            },
+        }
+        await self._broadcast_to_subscribers(self.all_connections, message)
+
     async def broadcast_ingestion_complete(self, events_count: int, risks_count: int) -> None:
         """Broadcast ingestion completion to all subscribers.
 

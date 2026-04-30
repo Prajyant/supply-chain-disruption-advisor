@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { riskApi } from '../services/api';
 import { useRiskStore } from '../store/riskStore';
 import { RiskCard } from '../components/RiskCard';
+import { ShipmentTracker } from '../components/ShipmentTracker';
 import {
   AlertTriangle,
   TrendingUp,
@@ -121,21 +122,29 @@ export function Dashboard() {
         })}
       </div>
 
-      {/* Recent Risks */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-4">Recent Risk Assessments</h2>
-        {risks && risks.length > 0 ? (
-          <div className="grid grid-cols-2 gap-4">
-            {risks.slice(0, 10).map((risk: any) => (
-              <RiskCard key={risk.risk_id} risk={risk} />
-            ))}
-          </div>
-        ) : (
-          <div className="card text-center py-12">
-            <Activity className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-400">No risks detected yet. Ingest data to begin analysis.</p>
-          </div>
-        )}
+      {/* Risks + Shipments Grid */}
+      <div className="grid grid-cols-3 gap-6">
+        {/* Recent Risks — 2 cols */}
+        <div className="col-span-2">
+          <h2 className="text-lg font-semibold text-white mb-4">Recent Risk Assessments</h2>
+          {risks && risks.length > 0 ? (
+            <div className="grid grid-cols-2 gap-4">
+              {risks.slice(0, 10).map((risk: any) => (
+                <RiskCard key={risk.risk_id} risk={risk} />
+              ))}
+            </div>
+          ) : (
+            <div className="card text-center py-12">
+              <Activity className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+              <p className="text-slate-400">No risks detected yet. Ingest data to begin analysis.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Shipment Tracker Widget — 1 col */}
+        <div className="col-span-1">
+          <ShipmentTracker />
+        </div>
       </div>
     </div>
   );

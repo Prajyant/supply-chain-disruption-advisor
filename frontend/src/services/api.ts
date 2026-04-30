@@ -67,6 +67,7 @@ export const networkApi = {
   getNetwork: () => api.get('/network'),
   getNode: (id: string) => api.get(`/api/node/${id}`),
   getNodeImpact: (id: string) => api.get(`/api/node/${id}/impact`),
+  getNodeContext: (id: string) => api.get(`/api/node/${id}/context`),
   propagateRisk: () => api.post('/graph/propagate'),
 };
 
@@ -83,6 +84,11 @@ export const ingestApi = {
     use_realtime_news?: boolean;
     use_live_emails?: boolean;
   }) => api.post('/ingest', data),
+};
+
+export const shipmentApi = {
+  getShipments: () => api.get('/shipments'),
+  getShipmentsByNode: (nodeId: string) => api.get(`/shipments/node/${nodeId}`),
 };
 
 export default api;

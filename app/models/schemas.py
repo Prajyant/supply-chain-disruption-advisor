@@ -151,6 +151,98 @@ class PropagationResponse(BaseModel):
     total_risks: int
 
 
+# ==================== PHASE 2: INTELLIGENCE LAYER SCHEMAS ====================
+
+
+class ShipmentSummary(BaseModel):
+    """Compact shipment card for node context."""
+    shipment_id: str
+    supplier: str
+    material: str
+    status: str  # "in_transit", "delivered", "rerouted", "cancelled", "delayed"
+    eta_days: int
+    origin: str
+    destination: str = ""
+    tracking_number: str = ""
+    departure_date: str = ""
+    last_updated: str = ""
+
+
+class OrderSummary(BaseModel):
+    """Pending order card for node context."""
+    order_id: str
+    supplier: str
+    material: str
+    quantity: float
+    status: str  # "pending", "in_production", "shipped", "fulfilled"
+    expected_date: str = ""
+    stock_coverage_days: Optional[int] = None
+
+
+class RiskHistoryEntry(BaseModel):
+    """Past risk event for node context timeline."""
+    risk_id: str
+    severity: str
+    disruption_type: str
+    detected_at: datetime
+    summary: str
+    source: str = ""
+
+
+class NewsArticleSummary(BaseModel):
+    """Linked news article for node context."""
+    news_id: str
+    headline: str
+    region: str
+    date: str
+    relevance_score: float = 0.0
+
+
+class NodeContextSummary(BaseModel):
+    """Lightweight context summary cached per node for the graph view."""
+    shipment_count: int = 0
+    order_count: int = 0
+    risk_count: int = 0
+    has_critical_risk: bool = False
+
+
+class NodeContext(BaseModel):
+    """Complete knowledge card for a Digital Twin node."""
+    # Core node info
+    id: str
+    type: str
+    name: str
+    location: str
+    risk_score: float
+    direct_risk: float
+    derived_risk: float
+    status: str
+    criticality: str
+    # Phase 4 prep fields
+    financial_exposure_usd: Optional[float] = None
+    days_buffer: Optional[int] = None
+    # Context lists
+    active_shipments: list[ShipmentSummary] = Field(default_factory=list)
+    pending_orders: list[OrderSummary] = Field(default_factory=list)
+    risk_history: list[RiskHistoryEntry] = Field(default_factory=list)
+    connected_news: list[NewsArticleSummary] = Field(default_factory=list)
+    # Impact graph
+    upstream_nodes: list[Node] = Field(default_factory=list)
+    downstream_nodes: list[Node] = Field(default_factory=list)
+    # Summary
+    context_summary: NodeContextSummary = Field(default_factory=NodeContextSummary)
+
+
+class ShipmentUpdateResult(BaseModel):
+    """Result of processing a shipment status update."""
+    shipment_id: str
+    supplier: str
+    old_status: str
+    new_status: str
+    node_id: Optional[str] = None
+    risk_score_change: Optional[float] = None
+
+
 # ==================== WEBSOCKET SCHEMAS ====================
 
 
