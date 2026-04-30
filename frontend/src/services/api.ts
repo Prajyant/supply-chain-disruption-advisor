@@ -91,4 +91,22 @@ export const shipmentApi = {
   getShipmentsByNode: (nodeId: string) => api.get(`/shipments/node/${nodeId}`),
 };
 
+export const playbookApi = {
+  getPlaybooks: () => api.get('/playbooks'),
+  getExecutions: () => api.get('/playbooks/executions'),
+  togglePlaybook: (id: string, enabled: boolean) =>
+    api.patch(`/playbooks/${id}?enabled=${enabled}`),
+  submitFeedback: (executionId: string, decision: string, comment?: string) =>
+    api.post(
+      `/playbooks/executions/${executionId}/feedback?decision=${decision}${comment ? '&comment=' + encodeURIComponent(comment) : ''}`
+    ),
+  simulate: (playbookId: string) =>
+    api.post(`/playbooks/${playbookId}/simulate`),
+};
+
+export const feedbackApi = {
+  getStats: () => api.get('/feedback/stats'),
+  getHistory: (limit = 50) => api.get(`/feedback/history?limit=${limit}`),
+};
+
 export default api;

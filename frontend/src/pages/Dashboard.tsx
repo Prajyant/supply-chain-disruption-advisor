@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { riskApi } from '../services/api';
 import { useRiskStore } from '../store/riskStore';
@@ -9,9 +10,45 @@ import {
   Activity,
   Clock,
   RefreshCw,
+  Zap,
+  XCircle,
 } from 'lucide-react';
 
 export function Dashboard() {
+  const [playbookToast, setPlaybookToast] = useState<{
+    execution_id: string;
+    playbook_name: string;
+    node_name: string;
+    actions_count: number;
+  } | null>(null);
+
+  // Auto-hide toast
+  useEffect(() => {
+    if (playbookToast) {
+      const timer = setTimeout(() => setPlaybookToast(null), 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [playbookToast]);
+
+  // WebSocket for real-time playbooks
+  useEffect(() => {
+    const ws = new WebSocket('ws://localhost:8000/ws/alerts');
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'playbook_triggered') {
+          setPlaybookToast(message.data);
+        }
+      } catch (err) {
+        console.error('Failed to parse WS message', err);
+      }
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, []);
   const { data: risks, isLoading, error, refetch } = useQuery({
     queryKey: ['risks'],
     queryFn: () => riskApi.getRisks().then((res) => res.data),
@@ -87,7 +124,34 @@ export function Dashboard() {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-8 relative">
+      {/* Real-time Playbook Toast */}
+      {playbookToast && (
+        <div className="absolute top-8 right-8 z-50 p-4 rounded-lg shadow-xl border backdrop-blur-md max-w-md animate-in slide-in-from-top-4 fade-in bg-slate-900 border-primary-500/30">
+          <div className="flex gap-3">
+            <div className="mt-1 bg-primary-500/20 p-1.5 rounded-md border border-primary-500/30">
+              <Zap className="w-5 h-5 text-primary-400" />
+            </div>
+            <div className="flex-1">
+              <div className="flex justify-between items-start">
+                <h4 className="font-semibold text-white">Playbook Auto-Triggered</h4>
+                <button onClick={() => setPlaybookToast(null)} className="text-slate-400 hover:text-white">
+                  <XCircle className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-sm text-primary-300 mt-1 font-medium">{playbookToast.playbook_name}</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Detected risk on <strong className="text-slate-200">{playbookToast.node_name}</strong>.
+              </p>
+              <div className="mt-3 flex gap-2">
+                <span className="text-[10px] uppercase tracking-wider font-semibold bg-primary-500/10 text-primary-400 px-2 py-1 rounded border border-primary-500/20">
+                  {playbookToast.actions_count} Actions Initiated
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Dashboard</h1>

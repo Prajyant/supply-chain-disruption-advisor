@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Network,
   MessageSquare,
+  Zap,
   Settings,
   LogOut,
   Package,
@@ -17,6 +18,7 @@ export function Layout() {
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/digital-twin', label: 'Digital Twin', icon: Network },
     { path: '/chat', label: 'Chat Advisor', icon: MessageSquare },
+    { path: '/playbooks', label: 'Playbooks', icon: Zap },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];
 

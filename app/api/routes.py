@@ -368,6 +368,177 @@ def get_shipments_for_node(
 
 # ==================== WEBSOCKET ENDPOINTS ====================
 
+# ==================== PHASE 3: PLAYBOOK ENDPOINTS ====================
+
+
+@router.get("/playbooks")
+def get_playbooks(user: dict = Depends(get_current_user)) -> dict:
+    """List all playbook definitions with acceptance rates.
+
+    Returns playbooks enriched with stats from FeedbackService (single source of truth).
+    """
+    playbooks = advisor_service.playbook_engine.get_playbooks()
+    return {"playbooks": [pb.model_dump() for pb in playbooks]}
+
+
+@router.get("/playbooks/executions")
+def get_playbook_executions(user: dict = Depends(get_current_user)) -> dict:
+    """List all triggered playbook executions, most recent first."""
+    executions = advisor_service.playbook_engine.get_executions()
+    return {"executions": [e.model_dump() for e in executions]}
+
+
+@router.patch("/playbooks/{playbook_id}")
+async def toggle_playbook(
+    playbook_id: str,
+    enabled: bool = True,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Toggle a playbook's enabled/disabled state.
+
+    ⚠️ In-memory only — resets on server restart. UI shows warning.
+    """
+    playbook = await advisor_service.playbook_engine.toggle_playbook(playbook_id, enabled)
+    if not playbook:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+    return {
+        "id": playbook.id,
+        "name": playbook.name,
+        "enabled": playbook.enabled,
+        "warning": "Setting is in-memory only. Will reset on server restart.",
+    }
+
+
+@router.post("/playbooks/executions/{execution_id}/feedback")
+def submit_playbook_feedback(
+    execution_id: str,
+    decision: str,
+    comment: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Submit feedback (accept/reject) on a playbook execution.
+
+    Returns 409 if feedback already exists for this execution (prevents
+    double-click corruption of acceptance rates).
+    """
+    execution = advisor_service.playbook_engine.get_execution(execution_id)
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+
+    if decision not in ("accepted", "rejected", "partial"):
+        raise HTTPException(status_code=400, detail="Decision must be: accepted, rejected, or partial")
+
+    # Build slim context snapshot
+    from app.models.feedback import ContextSnapshot
+    ctx = ContextSnapshot(
+        node_id=execution.node_id,
+        risk_score=0.0,
+        days_buffer=None,
+        active_shipment_count=0,
+    )
+    # Try to enrich from current node state
+    try:
+        node = advisor_service.graph_service.graph.get_node(execution.node_id)
+        if node:
+            ctx.risk_score = node.risk_score
+    except Exception:
+        pass
+
+    record = advisor_service.feedback_service.record_feedback(
+        execution_id=execution_id,
+        playbook_id=execution.playbook_id,
+        decision=decision,
+        user_id=user.get("sub", "anonymous"),
+        comment=comment,
+        context=ctx,
+    )
+
+    if record is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Feedback already exists for this execution",
+        )
+
+    # Update execution status
+    import asyncio
+    asyncio.ensure_future(
+        advisor_service.playbook_engine.update_execution_status(
+            execution_id, decision, comment
+        )
+    )
+
+    return {
+        "feedback_id": record.feedback_id,
+        "decision": record.decision,
+        "message": f"Feedback recorded: {decision}",
+    }
+
+
+@router.post("/playbooks/{playbook_id}/simulate")
+async def simulate_playbook(
+    playbook_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Simulate a playbook against the highest-risk node.
+
+    ➕ Demo: Judges can trigger playbooks manually without re-ingesting.
+    """
+    # Find highest-risk node
+    nodes = advisor_service.graph_service.graph.nodes
+    if not nodes:
+        raise HTTPException(status_code=400, detail="No nodes in graph. Ingest data first.")
+
+    highest_node = max(nodes.values(), key=lambda n: n.risk_score)
+
+    execution = await advisor_service.playbook_engine.simulate_playbook(
+        playbook_id=playbook_id,
+        node_id=highest_node.id,
+        node_name=highest_node.name,
+        risk_score=highest_node.risk_score,
+    )
+
+    if not execution:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+
+    # Record trigger for stats
+    advisor_service.feedback_service.record_trigger(playbook_id)
+
+    # Broadcast simulation via WebSocket
+    try:
+        from app.websocket.manager import manager as ws_mgr
+        await ws_mgr.broadcast_playbook_triggered(
+            execution_id=execution.execution_id,
+            playbook_name=execution.playbook_name,
+            node_id=execution.node_id,
+            node_name=execution.node_name,
+            severity=execution.severity,
+            actions_count=len(execution.actions),
+        )
+    except Exception:
+        pass
+
+    return {
+        "execution": execution.model_dump(),
+        "message": f"Simulated '{execution.playbook_name}' on {highest_node.name} (risk: {highest_node.risk_score:.0%})",
+    }
+
+
+@router.get("/feedback/stats")
+def get_feedback_stats(user: dict = Depends(get_current_user)) -> dict:
+    """Get aggregated feedback stats for all playbooks."""
+    stats = advisor_service.feedback_service.get_all_stats()
+    return {"stats": [s.model_dump() for s in stats]}
+
+
+@router.get("/feedback/history")
+def get_feedback_history(
+    limit: int = 50,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Get recent feedback records."""
+    records = advisor_service.feedback_service.get_feedback_history(limit)
+    return {"records": [r.model_dump() for r in records]}
+
 
 @router.websocket("/ws/{subscription}")
 async def websocket_endpoint(websocket: WebSocket, subscription: str) -> None:

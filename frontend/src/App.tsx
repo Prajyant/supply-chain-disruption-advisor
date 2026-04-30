@@ -5,6 +5,7 @@ import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { DigitalTwin } from './pages/DigitalTwin';
 import { Chat } from './pages/Chat';
+import { Playbooks } from './pages/Playbooks';
 import { Settings } from './pages/Settings';
 import { Login } from './pages/Login';
 
@@ -39,6 +40,7 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="digital-twin" element={<DigitalTwin />} />
             <Route path="chat" element={<Chat />} />
+            <Route path="playbooks" element={<Playbooks />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

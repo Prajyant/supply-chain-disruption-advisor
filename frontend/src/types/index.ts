@@ -136,3 +136,50 @@ export interface NodeContext {
   downstream_nodes: Node[];
   context_summary: NodeContextSummary;
 }
+
+// ==================== PHASE 3: PLAYBOOK TYPES ====================
+
+export interface PlaybookTrigger {
+  disruption_type: string;
+  min_severity: string;
+  requires_active_shipment: boolean;
+  requires_low_buffer: boolean;
+  buffer_threshold: number;
+}
+
+export interface PlaybookAction {
+  action_type: string;
+  description: string;
+  urgency: string;
+  target: string;
+}
+
+export interface PlaybookWithStats {
+  id: string;
+  name: string;
+  description: string;
+  trigger: PlaybookTrigger;
+  actions: PlaybookAction[];
+  enabled: boolean;
+  category: string;
+  times_triggered: number;
+  acceptance_rate: number | null;
+  last_triggered: string | null;
+}
+
+export interface PlaybookExecution {
+  execution_id: string;
+  playbook_id: string;
+  playbook_name: string;
+  risk_id: string;
+  node_id: string;
+  node_name: string;
+  supplier: string;
+  severity: string;
+  disruption_type: string;
+  triggered_at: string;
+  actions: PlaybookAction[];
+  status: string;
+  user_feedback: string | null;
+  is_simulation: boolean;
+}

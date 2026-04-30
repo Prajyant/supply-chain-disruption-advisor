@@ -11,6 +11,8 @@ from app.services.risk_service import RiskService
 from app.services.chat_service import ChatService
 from app.services.graph_service import GraphService
 from app.services.shipment_tracker import ShipmentTracker, ShipmentStatus
+from app.services.playbook_engine import PlaybookEngine
+from app.services.feedback_service import FeedbackService
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,8 @@ class AdvisorService:
         self.chat_service = ChatService()
         self.graph_service = GraphService()
         self.shipment_tracker = ShipmentTracker()
+        self.playbook_engine = PlaybookEngine()
+        self.feedback_service = FeedbackService()
 
         # Cached data for context enrichment (populated at ingest time)
         self._cached_news_events: list[dict] = []
@@ -145,6 +149,19 @@ class AdvisorService:
         # ---------------------------------------------------------------
         self._update_context_caches(all_risks, predictions)
 
+        # ---------------------------------------------------------------
+        # STEP 7: Schedule playbook evaluation as BACKGROUND TASK
+        # 🔴 Critical Fix #2: Don't block ingest on playbook evaluation.
+        # With 150 events × 8 playbooks, sync evaluation would timeout.
+        # ---------------------------------------------------------------
+        combined_risks = self._build_risk_assessments(all_risks, predictions)
+        if combined_risks:
+            import threading
+            threading.Thread(
+                target=lambda: asyncio.run(self._evaluate_playbooks_background(combined_risks)),
+                daemon=True
+            ).start()
+
         # Count predictions for the response message
         pred_count = len(predictions)
 
@@ -153,6 +170,10 @@ class AdvisorService:
             message += f" 🔮 Predictive engine found {pred_count} potential disruptions by cross-referencing your operations with world news."
         else:
             message += f" ✅ No predicted disruptions found — your active operations appear safe."
+
+        pb_count = len(combined_risks)
+        if pb_count > 0:
+            message += f" ⚡ Evaluating {pb_count} risks against automated playbooks..."
 
         return IngestResponse(
             ingested_events=result["ingested_events"],
@@ -257,6 +278,80 @@ class AdvisorService:
                 risk_count=rc,
                 has_critical_risk=hc,
             )
+
+    def _build_risk_assessments(
+        self, reactive_risks: list[dict], predictions: list[RiskAssessment]
+    ) -> list[RiskAssessment]:
+        """Convert reactive risks (dicts) to RiskAssessment objects and combine with predictions."""
+        combined: list[RiskAssessment] = list(predictions)
+
+        for risk_dict in reactive_risks:
+            try:
+                if isinstance(risk_dict, dict):
+                    combined.append(RiskAssessment(**risk_dict))
+                elif isinstance(risk_dict, RiskAssessment):
+                    combined.append(risk_dict)
+            except Exception:
+                continue  # Skip malformed risk dicts
+
+        return combined
+
+    async def _evaluate_playbooks_background(self, risks: list[RiskAssessment]) -> None:
+        """Evaluate all risks against playbooks in background.
+
+        🔴 Critical Fix #2: Runs as asyncio.ensure_future() — does NOT
+        block the ingest HTTP response. Results pushed via WebSocket.
+        """
+        try:
+            total_triggered = 0
+            for risk in risks:
+                # Get node context for context-aware triggers
+                node_id = self._resolve_node_id(
+                    risk.metadata.get("email_supplier", risk.metadata.get("supplier", ""))
+                )
+                node_context = None
+                node_name = risk.metadata.get("email_supplier", "Unknown")
+
+                if node_id:
+                    try:
+                        node_context = self.graph_service.get_node_context(
+                            node_id, self.shipment_tracker, [], []
+                        )
+                        node_name = node_context.name if node_context else node_name
+                    except Exception:
+                        pass  # Context enrichment is optional
+
+                executions = await self.playbook_engine.evaluate_risk(
+                    risk=risk,
+                    node_context=node_context,
+                    node_id=node_id or "",
+                    node_name=node_name,
+                )
+
+                for execution in executions:
+                    total_triggered += 1
+                    # Record trigger in feedback DB for stats
+                    self.feedback_service.record_trigger(execution.playbook_id)
+
+                    # Broadcast via WebSocket for real-time UI
+                    try:
+                        await manager.broadcast_playbook_triggered(
+                            execution_id=execution.execution_id,
+                            playbook_name=execution.playbook_name,
+                            node_id=execution.node_id,
+                            node_name=execution.node_name,
+                            severity=execution.severity,
+                            actions_count=len(execution.actions),
+                        )
+                    except Exception as ws_err:
+                        logger.warning(f"WebSocket broadcast failed: {ws_err}")
+
+            logger.info(
+                f"Playbook evaluation complete: {total_triggered} playbooks triggered "
+                f"from {len(risks)} risks"
+            )
+        except Exception as e:
+            logger.error(f"Background playbook evaluation failed: {e}", exc_info=True)
 
     def _map_to_graph(self, supplier_name: str, score: float) -> None:
         """Map a risk to the Digital Twin graph, creating nodes dynamically."""

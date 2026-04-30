@@ -127,6 +127,41 @@ class ConnectionManager:
         }
         await self._broadcast_to_subscribers(self.all_connections, message)
 
+    async def broadcast_playbook_triggered(
+        self,
+        execution_id: str,
+        playbook_name: str,
+        node_id: str,
+        node_name: str,
+        severity: str,
+        actions_count: int,
+    ) -> None:
+        """Broadcast when a playbook auto-triggers.
+
+        ➕ Demo: Shows real-time toast on Dashboard — the '80% manual
+        oversight reduction' made visible.
+
+        Args:
+            execution_id: The execution ID
+            playbook_name: Name of the triggered playbook
+            node_id: The affected node ID
+            node_name: The affected node name
+            severity: The risk severity
+            actions_count: Number of action steps
+        """
+        message = {
+            "type": "playbook_triggered",
+            "data": {
+                "execution_id": execution_id,
+                "playbook_name": playbook_name,
+                "node_id": node_id,
+                "node_name": node_name,
+                "severity": severity,
+                "actions_count": actions_count,
+            },
+        }
+        await self._broadcast_to_subscribers(self.all_connections, message)
+
     async def broadcast_ingestion_complete(self, events_count: int, risks_count: int) -> None:
         """Broadcast ingestion completion to all subscribers.
 
