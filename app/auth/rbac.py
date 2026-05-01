@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 class Role(str, Enum):
     """User roles for RBAC."""
     ADMIN = "admin"
-    MANAGER = "manager"
+    BUYER = "buyer"
     VIEWER = "viewer"
 
 
@@ -21,7 +21,7 @@ PERMISSIONS = {
         "graph": True,
         "settings": True,
     },
-    Role.MANAGER: {
+    Role.BUYER: {
         "ingest": True,
         "view_risks": True,
         "chat": True,
@@ -123,11 +123,11 @@ USERS = {
         "password": "password",
         "role": Role.ADMIN,
     },
-    "manager": {
+    "buyer": {
         "id": "2",
-        "username": "manager",
+        "username": "buyer",
         "password": "password",
-        "role": Role.MANAGER,
+        "role": Role.BUYER,
     },
     "viewer": {
         "id": "3",

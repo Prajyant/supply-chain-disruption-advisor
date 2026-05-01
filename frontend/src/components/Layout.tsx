@@ -1,17 +1,14 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
 import {
   LayoutDashboard,
   Network,
   MessageSquare,
   Settings,
-  LogOut,
   Package,
 } from 'lucide-react';
 
 export function Layout() {
   const location = useLocation();
-  const { user, logout } = useAuthStore();
 
   const navItems = [
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -57,29 +54,6 @@ export function Layout() {
             );
           })}
         </nav>
-
-        <div className="p-4 border-t border-slate-800">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center">
-                <span className="text-sm font-medium text-white">
-                  {user?.username?.[0]?.toUpperCase() || 'U'}
-                </span>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-white">{user?.username}</p>
-                <p className="text-xs text-slate-400 capitalize">{user?.role}</p>
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={logout}
-            className="flex items-center gap-2 w-full px-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Logout</span>
-          </button>
-        </div>
       </aside>
 
       {/* Main content */}

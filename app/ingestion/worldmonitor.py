@@ -5,6 +5,10 @@ import requests
 from datetime import datetime, timezone
 from typing import Any
 
+from app.ingestion.rss_utils import clean_html_text, parse_feed_items
+from app.ingestion.trade_monitor import fetch_trade_policy_events
+from app.ingestion.weather_monitor import fetch_weather_events
+
 logger = logging.getLogger(__name__)
 
 # Reliable RSS feeds — Google News is the most consistent
@@ -25,22 +29,13 @@ GLOBAL_NEWS_FEEDS = [
 def fetch_rss_feed(feed_url: str) -> list[dict[str, Any]]:
     """Fetch and parse RSS feed items."""
     try:
-        import feedparser
         response = requests.get(
             feed_url,
             headers={"User-Agent": "Mozilla/5.0 (SupplyChainAdvisor/1.0)"},
             timeout=15,
         )
         response.raise_for_status()
-        feed = feedparser.parse(response.content)
-        items = []
-        for entry in feed.entries[:15]:
-            items.append({
-                "title": entry.get("title", ""),
-                "link": entry.get("link", ""),
-                "published": entry.get("published", ""),
-                "summary": entry.get("summary", entry.get("description", "")),
-            })
+        items = parse_feed_items(response.content, limit=15)
         logger.info(f"RSS feed {feed_url[:60]}... returned {len(items)} items")
         return items
     except Exception as e:
@@ -74,7 +69,7 @@ def fetch_global_disruption_news(limit: int = 50) -> list[dict[str, Any]]:
 def normalize_news_event(item: dict[str, Any], idx: int, source: str) -> dict[str, Any]:
     """Normalize news item to our internal schema."""
     title = item.get("title", "")
-    summary = item.get("summary", item.get("description", ""))
+    summary = clean_html_text(item.get("summary", item.get("description", "")))
     link = item.get("link", "")
     published = item.get("published", "")
 
@@ -101,10 +96,10 @@ def normalize_news_event(item: dict[str, Any], idx: int, source: str) -> dict[st
 
 
 def fetch_realtime_news() -> list[dict[str, Any]]:
-    """Fetch real-time news from all sources.
+    """Fetch real-time news and external disruption intelligence.
 
     Returns:
-        List of normalized news events
+        List of normalized events for Gemini cross-reference
     """
     all_events = []
 
@@ -117,6 +112,14 @@ def fetch_realtime_news() -> list[dict[str, Any]]:
     global_items = fetch_global_disruption_news(limit=30)
     for idx, item in enumerate(global_items):
         all_events.append(normalize_news_event(item, idx + len(supply_chain_items), "global_news"))
+
+    # Fetch weather intelligence for major logistics nodes.
+    weather_events = fetch_weather_events(limit=20)
+    all_events.extend(weather_events)
+
+    # Fetch official/public trade-policy signals.
+    trade_events = fetch_trade_policy_events(limit=30)
+    all_events.extend(trade_events)
 
     logger.info(f"Total real-time news fetched: {len(all_events)} events")
     return all_events

@@ -115,7 +115,7 @@ JWT_SECRET=your-secret-key-change-in-production
 | Username | Password | Role |
 |----------|----------|------|
 | admin | password | admin |
-| manager | password | manager |
+| buyer | password | buyer |
 | viewer | password | viewer |
 
 ## Testing
