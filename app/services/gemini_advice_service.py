@@ -88,20 +88,31 @@ class GeminiAdviceService:
             if genai_types:
                 config = genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    temperature=0.2,
-                    max_output_tokens=900,
+                    temperature=0.1,
+                    max_output_tokens=4096,
+                    thinking_config=genai_types.ThinkingConfig(
+                        thinking_budget=128,
+                        include_thoughts=False,
+                    ),
                 )
             response = self._client.models.generate_content(
                 model=self._model,
                 contents=prompt,
                 config=config,
             )
-            payload = extract_json_object(response.text or "")
+            response_text = extract_response_text(response)
+            payload = extract_json_object(response_text)
             guarded = apply_guardrails(payload, score_result)
             return ShipmentRiskAdviceResponse(**guarded)
-        except (json.JSONDecodeError, ValidationError, ValueError) as exc:
+        except json.JSONDecodeError as exc:
+            logger.warning("Gemini advice returned invalid JSON: %s", exc)
+            self._last_error = "gemini_response_invalid_json"
+        except ValidationError as exc:
             logger.warning("Gemini advice failed validation: %s", exc)
             self._last_error = "gemini_response_validation_failed"
+        except ValueError as exc:
+            logger.warning("Gemini advice returned no usable text: %s", exc)
+            self._last_error = "gemini_response_empty_or_truncated"
         except Exception as exc:
             logger.warning("Gemini advice call failed: %s", exc)
             self._last_error = classify_gemini_error(exc)
@@ -149,8 +160,8 @@ def build_advice_prompt(
     score_result: dict[str, Any],
     question: str | None,
 ) -> str:
-    """Build the strict JSON prompt for Gemini."""
-    evidence_events = score_result.get("evidence_events", [])[:5]
+    """Build a compact JSON prompt for Gemini-owned reasoning only."""
+    evidence_events = score_result.get("evidence_events", [])[:4]
 
     return f"""You are a supply chain risk analyst.
 
@@ -178,22 +189,13 @@ User question:
 Evidence events that contributed to the risk score:
 {json.dumps(evidence_events, indent=2) if evidence_events else "No evidence events matched this shipment."}
 
-Return ONLY one valid JSON object with exactly these keys:
-- "shipment_id": string
-- "risk_score": number
-- "risk_level": "low" | "medium" | "high" | "critical"
+Return ONLY one compact valid JSON object with exactly these keys:
 - "decision": string, one of: "proceed", "monitor", "mitigate", "hold_or_escalate"
 - "reason": string, 1-3 concise sentences
 - "recommended_actions": array of 3-5 specific actions
 - "confidence_score": integer 0-100
 - "escalation_required": boolean
-- "scoring_method": string
-- "reasoning_method": string
-- "model_version": string
-- "signals": array of strings
-- "features": object of numeric features
-- "evidence_events": array of evidence objects
-- "context_events": array of non-scoring weather/news/trade context objects
+- "reasoning_method": short string such as "gemini_analyst_review"
 - "event_explanations": array of objects, one for each evidence event that contributed to the risk score. Each object must have:
   - "event_title": string, the title of the event
   - "event_source": string, the source of the event
@@ -204,6 +206,9 @@ Return ONLY one valid JSON object with exactly these keys:
 Guardrails:
 - risk_score must equal the provided score.
 - risk_level must match the provided level.
+- Do not include shipment_id, risk_score, risk_level, scoring_method, model_version,
+  signals, features, evidence_events, or context_events. The server injects those.
+- Keep the whole response under 1200 words.
 - Use actions that are operationally specific, not generic.
 - Explain shipment-owned drivers first: inventory cover, priority, lead time, supplier history, vessel status, and value.
 - Mention weather/news/trade only when the score result contains matching non-zero features or evidence events.
@@ -255,6 +260,40 @@ def extract_json_object(raw: str) -> dict[str, Any]:
     if not match:
         raise ValueError("No JSON object found in Gemini response.")
     return json.loads(match.group(0))
+
+
+def extract_response_text(response: Any) -> str:
+    """Read Gemini response text and surface finish/block reasons when empty."""
+    try:
+        text = response.text or ""
+    except Exception as exc:
+        details = extract_response_details(response)
+        raise ValueError(f"Gemini response text unavailable. {details}") from exc
+
+    if text.strip():
+        return text
+
+    details = extract_response_details(response)
+    raise ValueError(f"Gemini response was empty. {details}")
+
+
+def extract_response_details(response: Any) -> str:
+    """Return compact diagnostic details from a Gemini SDK response."""
+    parts: list[str] = []
+    prompt_feedback = getattr(response, "prompt_feedback", None)
+    if prompt_feedback:
+        parts.append(f"prompt_feedback={prompt_feedback}")
+
+    candidates = getattr(response, "candidates", None) or []
+    if candidates:
+        finish_reasons = [
+            str(getattr(candidate, "finish_reason", ""))
+            for candidate in candidates
+            if getattr(candidate, "finish_reason", None)
+        ]
+        if finish_reasons:
+            parts.append(f"finish_reasons={finish_reasons}")
+    return "; ".join(parts) or "No SDK details available."
 
 
 def apply_guardrails(payload: dict[str, Any], score_result: dict[str, Any]) -> dict[str, Any]:

@@ -206,7 +206,7 @@ class ShipmentInput(BaseModel):
     lead_time_days: float
     inventory_days_cover: float
     supplier_delay_count: int = 0
-    priority: str = "normal"
+    priority: str | int = "normal"
     declared_value_usd: float = 0.0
     departure_date: Optional[str] = None
     eta_date: Optional[str] = None
