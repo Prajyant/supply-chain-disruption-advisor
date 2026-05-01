@@ -39,7 +39,7 @@ export function parseShipmentsCsv(csv: string): ShipmentInput[] {
       lead_time_days: toNumber(row.lead_time_days),
       inventory_days_cover: toNumber(row.inventory_days_cover),
       supplier_delay_count: toNumber(row.supplier_delay_count),
-      priority: toNumber(row.priority),
+      priority: row.priority || 'normal',
       declared_value_usd: toNumber(row.declared_value_usd),
       departure_date: row.departure_date || null,
       eta_date: row.eta_date || null,

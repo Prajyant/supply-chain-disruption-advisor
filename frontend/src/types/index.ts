@@ -89,7 +89,7 @@ export interface ShipmentInput {
   inventory_days_cover: number;
   supplier_delay_count: number;
   priority_score?: number;
-  priority?: number;
+  priority?: string;
   declared_value_usd: number;
   departure_date?: string | null;
   eta_date?: string | null;

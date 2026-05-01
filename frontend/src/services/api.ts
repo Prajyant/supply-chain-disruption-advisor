@@ -46,8 +46,8 @@ export const shipmentApi = {
       },
     });
   },
-  runStrandsRisk: (shipment: any, query?: string) =>
-    api.post('/agents/strands/shipment-risk', { shipment, query }),
+  runStrandsRisk: (shipment: any, question?: string) =>
+    api.post('/agents/strands/shipment-risk', { shipment, question }),
 };
 
 export const agentApi = {

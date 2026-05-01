@@ -142,7 +142,7 @@ def run_strands_shipment_risk_agent(req: StrandsShipmentRiskRequest) -> StrandsS
 
 
 @router.get("/agents/strands/status")
-def strands_status() -> dict[str, str]:
+def strands_status() -> dict:
     """Return whether the backend process can access the Strands SDK."""
     return {
         "agent": "SupplyChainRiskAgent",
