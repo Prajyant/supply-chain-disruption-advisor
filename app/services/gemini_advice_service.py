@@ -171,6 +171,18 @@ Treat weather, marine weather, trade, and news as supporting context. They may
 amplify risk when shipment fundamentals are already weak, but they must not be
 presented as the only reason for a high-risk decision.
 
+Advice target:
+- Write recommendations for the buyer/procurement control tower to send to the
+  supplier, carrier, forwarder, plant, or compliance team.
+- Each recommended action must start with an owner tag: [Supplier], [Carrier],
+  [Forwarder], [Procurement], [Plant], [Inventory], or [Compliance].
+- Each action must include a concrete request, a timing expectation, and a
+  decision trigger where appropriate. Example: "[Carrier] Confirm revised ETD,
+  next port call, and ETA within 2 hours; escalate if the ETA moves by more
+  than 24 hours."
+- Prefer shipment-specific actions over generic monitoring. Mention the actual
+  material, vessel/flight, route node, ETA, inventory cover, or supplier name.
+
 Supply Chain Risk Context:
 - News events are risky because they can cause port closures, route diversions, customs delays, labor strikes, and geopolitical disruptions that directly impact transit times and delivery reliability.
 - Weather events affect supply chains by causing vessel delays, port congestion, route changes, and safety-related stoppages that extend lead times unpredictably.
@@ -210,6 +222,9 @@ Guardrails:
   signals, features, evidence_events, or context_events. The server injects those.
 - Keep the whole response under 1200 words.
 - Use actions that are operationally specific, not generic.
+- Every recommended action must have an owner tag and a concrete artifact or
+  next step, such as revised ETA, recovery plan, customs document pack, partial
+  expedite quote, alternate port plan, or stock allocation decision.
 - Explain shipment-owned drivers first: inventory cover, priority, lead time, supplier history, vessel status, and value.
 - Mention weather/news/trade only when the score result contains matching non-zero features or evidence events.
 - If risk_level is high or critical, escalation_required must be true.
@@ -315,7 +330,7 @@ def apply_guardrails(payload: dict[str, Any], score_result: dict[str, Any]) -> d
     if not isinstance(actions, list) or len(actions) < 3:
         payload["recommended_actions"] = fallback_actions(level, score_result=score_result)
     else:
-        payload["recommended_actions"] = [str(action) for action in actions[:5]]
+        payload["recommended_actions"] = [normalize_action(action) for action in actions[:5]]
 
     payload["decision"] = normalize_decision(str(payload.get("decision", "")), level)
     payload["confidence_score"] = clamp_int(payload.get("confidence_score", 75), 0, 100)
@@ -350,6 +365,19 @@ def normalize_decision(decision: str, level: str) -> str:
     if decision in allowed:
         return decision
     return decision_for_level(level)
+
+
+def normalize_action(action: Any) -> str:
+    """Accept Gemini action strings or owner/action objects."""
+    if isinstance(action, dict):
+        owner = str(action.get("owner") or action.get("team") or action.get("role") or "").strip()
+        text = str(action.get("action") or action.get("text") or action.get("recommendation") or "").strip()
+        if owner and text:
+            owner = owner.strip("[]")
+            return f"[{owner}] {text}"
+        if text:
+            return text
+    return str(action)
 
 
 def decision_for_level(level: str) -> str:
@@ -409,56 +437,56 @@ def fallback_actions(
 
     if shipment and features.get("inventory_pressure", 0) >= 6:
         actions.append(
-            f"Ask the plant to confirm exact RM stock cover for {shipment.material} and freeze non-critical consumption until the ETA is confirmed."
+            f"[Plant] Confirm exact RM stock cover for {shipment.material} within 2 hours and freeze non-critical consumption until the ETA is confirmed."
         )
     if shipment and features.get("priority_score", 0) >= 6:
         actions.append(
-            f"Prepare an expedited split shipment for the highest-priority quantity of {shipment.material} if the vessel ETA slips by more than 24 hours."
+            f"[Procurement] Prepare an expedited split-shipment quote for the highest-priority quantity of {shipment.material}; trigger it if ETA slips by more than 24 hours."
         )
     if shipment and features.get("supplier_delay_count", 0) > 0:
         actions.append(
-            f"Request a written recovery plan from {shipment.supplier}, including backup dispatch date, alternate carrier, and escalation contact."
+            f"[Supplier] Send a written recovery plan from {shipment.supplier} today, including backup dispatch date, alternate carrier, and escalation contact."
         )
     if shipment and shipment.transport_mode.lower().strip() == "sea":
         actions.append(
-            f"Ask the forwarder/carrier to confirm the live vessel position, next port call, and ETA for {shipment.vessel_name or shipment.imo_number or shipment.shipment_id}."
+            f"[Carrier] Confirm live vessel position, next port call, port status, and revised ETA for {shipment.vessel_name or shipment.imo_number or shipment.shipment_id} within 2 hours."
         )
     if any("weather" in str(event.get("source", "")).lower() or "marine" in str(event.get("source", "")).lower() for event in evidence_events):
-        actions.append("Check alternate port, transshipment, or buffer-stock options because route-matched weather is affecting the risk score.")
+        actions.append("[Forwarder] Provide alternate port, transshipment, or holding-plan options because route-matched weather is affecting the risk score.")
     elif any("weather" in str(event.get("source", "")).lower() or "marine" in str(event.get("source", "")).lower() for event in context_events):
-        actions.append("Keep live weather and marine alerts on watch; do not reroute unless the alert becomes route-matched or the carrier revises ETA.")
+        actions.append("[Forwarder] Keep live weather and marine alerts on watch; propose reroute only if the alert becomes route-matched or carrier revises ETA.")
     if any("trade" in str(event.get("source", "")).lower() or "news" in str(event.get("source", "")).lower() for event in evidence_events):
-        actions.append("Have compliance verify customs documents, tariff exposure, and restricted-party checks before the shipment reaches the next border/port.")
+        actions.append("[Compliance] Verify customs documents, tariff exposure, and restricted-party checks before the shipment reaches the next border or port.")
     elif any("trade" in str(event.get("source", "")).lower() or "news" in str(event.get("source", "")).lower() for event in context_events):
-        actions.append("Review World Monitor headlines for customs or trade-policy relevance, but keep them as context unless they match the route or material.")
+        actions.append("[Compliance] Review World Monitor headlines for customs or trade-policy relevance; act only if they match the route or material.")
 
     if len(actions) >= 3:
         return actions[:5]
 
     if level == "critical":
         actions.extend([
-            "Escalate to procurement and logistics leadership immediately.",
-            "Check alternate supplier or route availability before dispatch.",
-            "Increase buffer stock for dependent production lines.",
-            "Request carrier and supplier status confirmation within 24 hours.",
+            "[Procurement] Escalate to logistics leadership immediately with risk score, ETA, and inventory-cover impact.",
+            "[Supplier] Check alternate supplier or route availability before dispatch.",
+            "[Inventory] Increase buffer stock or allocate available stock to dependent production lines.",
+            "[Carrier] Send shipment status confirmation within 24 hours.",
         ])
     if level == "high":
         actions.extend([
-            "Confirm carrier schedule and route exposure before shipment release.",
-            "Prepare alternate routing or backup supplier options.",
-            "Increase monitoring cadence until the shipment clears the risky node.",
+            "[Carrier] Confirm schedule and route exposure before shipment release.",
+            "[Procurement] Prepare alternate routing or backup supplier options.",
+            "[Forwarder] Increase monitoring cadence until the shipment clears the risky node.",
         ])
     if level == "medium":
         actions.extend([
-            "Monitor route conditions daily until delivery.",
-            "Confirm inventory cover against expected arrival date.",
-            "Keep a backup logistics option ready if signals worsen.",
+            "[Forwarder] Monitor route conditions daily until delivery.",
+            "[Inventory] Confirm inventory cover against expected arrival date.",
+            "[Procurement] Keep a backup logistics option ready if signals worsen.",
         ])
     if not actions:
         actions.extend([
-        "Proceed with the current shipment plan.",
-        "Continue normal supplier and carrier monitoring.",
-        "Re-score if weather, trade, or supplier signals change.",
+        "[Procurement] Proceed with the current shipment plan.",
+        "[Supplier] Continue normal supplier and carrier monitoring.",
+        "[Procurement] Re-score if weather, trade, or supplier signals change.",
         ])
     return actions[:5]
 

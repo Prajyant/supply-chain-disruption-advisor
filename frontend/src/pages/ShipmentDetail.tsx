@@ -16,7 +16,6 @@ import {
   ShieldCheck,
   AlertCircle,
   Link as LinkIcon,
-  Activity,
   Newspaper,
   Bot,
 } from 'lucide-react';
@@ -24,7 +23,7 @@ import { agentApi, shipmentApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
 import { EvidenceEvent, ShipmentInput, StrandsShipmentRiskResponse } from '../types';
 import { VesselMap } from '../components/VesselMap';
-import { CollapsibleSection } from '../components/CollapsibleSection';
+import { DebugPanel } from '../components/DebugPanel';
 
 type StrandsStatus = {
   agent: string;
@@ -120,202 +119,155 @@ export function ShipmentDetail() {
   const flightEvents = evidenceEvents.filter((event) => isEventSource(event, ['flight']));
   const isAir = shipment.transport_mode === 'air';
   const telemetryEvents = isAir ? flightEvents : vesselEvents;
+  const processorSteps = buildProcessorSteps(
+    shipment,
+    analysis,
+    strandsStatusQuery.data?.strands_sdk_available ?? false,
+    analysisQuery.isLoading || analysisQuery.isFetching,
+    contextEvents
+  );
 
   return (
     <div className="space-y-6 p-5 lg:p-8">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
+      <section className="overflow-hidden rounded-xl border border-slate-800 bg-[linear-gradient(135deg,#111827_0%,#020617_46%,#0f172a_100%)] shadow-2xl shadow-slate-950/50">
+        <div className="border-b border-slate-800/80 px-5 py-4 lg:px-6">
           <button
             onClick={() => navigate('/')}
-            className="mb-4 inline-flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-white"
+            className="inline-flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-white"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to dashboard
           </button>
-          <h1 className="text-2xl font-bold text-white">Shipment Detail Analysis</h1>
-          <p className="max-w-4xl text-slate-400">
-            {shipment.shipment_id} for {shipment.supplier} on the route from {shipment.origin} to {shipment.destination}
-          </p>
         </div>
 
-        <button
-          onClick={() => analysisQuery.refetch()}
-          disabled={analysisQuery.isFetching}
-          className="btn-primary flex items-center gap-2 disabled:opacity-50"
-        >
-          {analysisQuery.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          Refresh analysis
-        </button>
-      </div>
+        <div className="flex flex-col gap-5 px-5 py-6 lg:px-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="min-w-0">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-200">
+                Operations Brief
+              </span>
+              <span className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium uppercase text-slate-300">
+                {shipment.transport_mode}
+              </span>
+              <span className="rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-300">
+                ETA {shipment.eta_date || 'not set'}
+              </span>
+            </div>
+            <h1 className="text-3xl font-bold text-white">Shipment Detail Analysis</h1>
+            <p className="mt-2 max-w-4xl text-lg text-slate-300">
+              <span className="font-mono text-cyan-200">{shipment.shipment_id}</span> for {shipment.supplier}
+            </p>
+            <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 text-sm">
+              <RouteChip label="Origin" value={shipment.origin} />
+              <span className="text-slate-600">to</span>
+              <RouteChip label="Destination" value={shipment.destination} />
+              <RouteChip label="Material" value={shipment.material} />
+              <RouteChip label="Inventory" value={`${shipment.inventory_days_cover} days`} />
+            </div>
+          </div>
 
-      {/* Always Visible: Risk Summary Card */}
+          <button
+            onClick={() => analysisQuery.refetch()}
+            disabled={analysisQuery.isFetching}
+            className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary-400/30 bg-primary-500/20 px-4 py-3 text-sm font-semibold text-primary-100 shadow-lg shadow-primary-950/30 transition-all hover:bg-primary-500/30 disabled:opacity-50"
+          >
+            {analysisQuery.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Refresh analysis
+          </button>
+        </div>
+      </section>
+
       {analysis ? (
-        <CompactRiskSummary result={analysis} />
+        <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+          <div className="min-w-0 space-y-5">
+            <CompactRiskSummary result={analysis} />
+            <KeyRiskDrivers result={analysis} />
+          </div>
+
+          <section className="card min-w-0 space-y-4 overflow-hidden">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Ship className="h-5 w-5 text-primary-300" />
+                  <h2 className="text-lg font-semibold text-white">Live Route View</h2>
+                </div>
+                <p className="mt-1 text-sm text-slate-400">
+                  {shipment.origin} to {shipment.destination}
+                </p>
+              </div>
+              <span className="w-fit rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium uppercase text-slate-300">
+                {shipment.transport_mode}
+              </span>
+            </div>
+
+            <VesselMap
+              vesselName={isAir ? (shipment.flight_callsign || shipment.vessel_name || undefined) : (shipment.vessel_name || undefined)}
+              origin={shipment.origin}
+              destination={shipment.destination}
+              latitude={shipment.vessel_latitude}
+              longitude={shipment.vessel_longitude}
+              status={telemetryEvents[0]?.metadata?.status || telemetryEvents[0]?.metadata?.vessel_status || undefined}
+              speed={telemetryEvents[0]?.metadata?.speed_knots}
+              progress={telemetryEvents[0]?.metadata?.progress_percent}
+              transportMode={shipment.transport_mode}
+            />
+          </section>
+        </div>
       ) : analysisQuery.isLoading ? (
         <PageLoading label="Running shipment analysis" compact />
       ) : analysisQuery.error ? (
         <InlineError message="Shipment analysis failed. Check that the backend is running and then refresh this page." />
       ) : null}
 
-      {/* Always Visible: Key Risk Drivers */}
-      {analysis && <KeyRiskDrivers result={analysis} />}
-
-      {/* Collapsible Sections */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <CollapsibleSection
-          title="Technical Details"
-          icon={<Cpu className="h-5 w-5 text-slate-400" />}
-          defaultOpen={false}
-        >
-          <AnalysisProcessor
-            shipment={shipment}
-            result={analysis}
-            strandsAvailable={strandsStatusQuery.data?.strands_sdk_available ?? false}
-            isLoading={analysisQuery.isLoading || analysisQuery.isFetching}
-            contextEvents={contextEvents}
-          />
-          {analysis && (
-            <div className="mt-4 space-y-2">
-              <h3 className="text-sm font-semibold text-white">Model Features</h3>
-              {Object.entries(analysis.result.features).map(([feature, value]) => (
-                <div key={feature} className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-slate-950/50 px-3 py-2 text-sm">
-                  <span className="min-w-0 break-words text-slate-400">{FEATURE_LABELS[feature] || feature}</span>
-                  <span className="shrink-0 font-mono text-white">{value.toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </CollapsibleSection>
-
-        <CollapsibleSection
-          title="Live Context"
-          icon={<CloudSun className="h-5 w-5 text-slate-400" />}
-          defaultOpen={false}
-        >
-          <div className="space-y-3">
-            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
-              <h3 className="text-sm font-semibold text-white mb-3">Shipment Context</h3>
-              <ContextRow label="Supplier" value={shipment.supplier} />
-              <ContextRow label="Material" value={shipment.material} />
-              <ContextRow label="Quantity" value={String(shipment.quantity)} />
-              <ContextRow label="Lead Time" value={`${shipment.lead_time_days} days`} />
-              <ContextRow label="Inventory Cover" value={`${shipment.inventory_days_cover} days`} />
-              <ContextRow label="Declared Value" value={formatCurrency(shipment.declared_value_usd)} />
-              <ContextRow label="ETA" value={shipment.eta_date || 'Not set'} />
-            </div>
-            {[...weatherContextEvents, ...worldContextEvents].length > 0 && (
-              <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
-                <h3 className="text-sm font-semibold text-white mb-3">Live Weather & News</h3>
-                <div className="space-y-2">
-                  {[...weatherContextEvents, ...worldContextEvents].slice(0, 5).map((event, index) => (
-                    <div key={index} className="text-xs text-slate-300">
-                      <span className={`font-medium ${severityClass(event.severity)}`}>{event.severity}</span>
-                      {' '}{event.title}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </CollapsibleSection>
-
-        <CollapsibleSection
-          title="Full Mitigation Plan"
-          icon={<ShieldCheck className="h-5 w-5 text-slate-400" />}
-          defaultOpen={false}
-        >
-          {analysis ? (
-            <div className="space-y-3">
-              {analysis.result.recommended_actions.map((action, index) => (
-                <div key={action} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/50 p-4">
-                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary-300">
-                    Action {index + 1}
-                  </div>
-                  <p className="break-words text-sm leading-6 text-slate-200">{action}</p>
-                </div>
-              ))}
-              {analysis.result.escalation_required && (
-                <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 p-4">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-danger-300">
-                    <AlertCircle className="h-4 w-4" />
-                    Escalation Required
-                  </div>
-                  <p className="mt-2 text-sm text-slate-300">
-                    This shipment requires immediate attention from procurement and logistics leadership.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">Mitigation actions will appear after analysis completes.</p>
-          )}
-        </CollapsibleSection>
-
-        <CollapsibleSection
-          title="Evidence Events"
-          icon={<Activity className="h-5 w-5 text-slate-400" />}
-          defaultOpen={false}
-        >
-          <div className="space-y-4">
-            {weatherEvents.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-2">Weather & Marine</h3>
-                {weatherEvents.map((event, index) => (
-                  <CompactEvidenceCard key={index} event={event} />
-                ))}
-              </div>
-            )}
-            {worldEvents.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-white mb-2">News & Trade</h3>
-                {worldEvents.map((event, index) => (
-                  <CompactEvidenceCard key={index} event={event} />
-                ))}
-              </div>
-            )}
-            {weatherEvents.length === 0 && worldEvents.length === 0 && (
-              <p className="text-sm text-slate-500">No evidence events matched this shipment.</p>
-            )}
-          </div>
-        </CollapsibleSection>
-      </div>
-
-      {/* Map Section */}
-      <VesselMap
-        vesselName={isAir ? (shipment.flight_callsign || shipment.vessel_name || undefined) : (shipment.vessel_name || undefined)}
-        origin={shipment.origin}
-        destination={shipment.destination}
-        latitude={shipment.vessel_latitude}
-        longitude={shipment.vessel_longitude}
-        status={telemetryEvents[0]?.metadata?.status || telemetryEvents[0]?.metadata?.vessel_status || undefined}
-        speed={telemetryEvents[0]?.metadata?.speed_knots}
-        progress={telemetryEvents[0]?.metadata?.progress_percent}
-        transportMode={shipment.transport_mode}
-      />
+      {analysis && (
+        <DebugPanel
+          modelFeatureCount={Object.keys(analysis.result.features).length}
+          modelFeaturesContent={<ModelFeaturesList features={analysis.result.features} />}
+          evidenceCount={evidenceEvents.length}
+          evidenceContent={<EvidenceDebugContent weatherEvents={weatherEvents} worldEvents={worldEvents} />}
+          technicalStepCount={processorSteps.length}
+          technicalWorkflowContent={
+            <AnalysisProcessor
+              steps={processorSteps}
+              toolSteps={analysis.steps}
+              isLoading={analysisQuery.isLoading || analysisQuery.isFetching}
+            />
+          }
+          mitigationCount={analysis.result.recommended_actions.length}
+          mitigationContent={
+            <MitigationDebugContent
+              actions={analysis.result.recommended_actions}
+              escalationRequired={analysis.result.escalation_required}
+            />
+          }
+          contextCount={contextEvents.length + 1}
+          contextContent={
+            <LiveContextDebugContent
+              shipment={shipment}
+              weatherContextEvents={weatherContextEvents}
+              worldContextEvents={worldContextEvents}
+            />
+          }
+        />
+      )}
     </div>
   );
 }
 
 function AnalysisProcessor({
-  shipment,
-  result,
-  strandsAvailable,
+  steps,
+  toolSteps,
   isLoading,
-  contextEvents,
 }: {
-  shipment: ShipmentInput;
-  result?: StrandsShipmentRiskResponse;
-  strandsAvailable: boolean;
+  steps: ProcessorStep[];
+  toolSteps: string[];
   isLoading: boolean;
-  contextEvents: EvidenceEvent[];
 }) {
-  const steps = buildProcessorSteps(shipment, result, strandsAvailable, isLoading, contextEvents);
-
   return (
-    <section className="card min-w-0 space-y-4 overflow-hidden">
+    <div className="min-w-0 space-y-4 overflow-hidden">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">Analysis Processor</h2>
+          <h4 className="text-sm font-semibold text-white">Analysis Processor</h4>
           <p className="text-sm text-slate-400">Live view of how Strands coordinates the shipment decision workflow</p>
         </div>
         {isLoading && (
@@ -332,11 +284,11 @@ function AnalysisProcessor({
         ))}
       </div>
 
-      {result && (
+      {toolSteps.length > 0 && (
         <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
           <div className="mb-2 text-xs uppercase tracking-wide text-slate-500">Strands tool order</div>
           <div className="flex min-w-0 flex-wrap gap-2">
-            {result.steps.map((step) => (
+            {toolSteps.map((step) => (
               <span key={step} className="max-w-full rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 break-words">
                 {step}
               </span>
@@ -344,7 +296,7 @@ function AnalysisProcessor({
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -364,6 +316,134 @@ function ProcessorNode({ step }: { step: ProcessorStep }) {
       </div>
       <div className="break-words text-sm font-semibold text-white">{step.label}</div>
       <div className="mt-2 break-words text-xs leading-5 text-slate-400">{step.detail}</div>
+    </div>
+  );
+}
+
+function ModelFeaturesList({ features }: { features: Record<string, number> }) {
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      {Object.entries(features).map(([feature, value]) => (
+        <div key={feature} className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-slate-950/60 px-3 py-2 text-sm">
+          <span className="min-w-0 break-words text-slate-400">{FEATURE_LABELS[feature] || feature}</span>
+          <span className="shrink-0 font-mono text-white">{value.toFixed(2)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EvidenceDebugContent({
+  weatherEvents,
+  worldEvents,
+}: {
+  weatherEvents: EvidenceEvent[];
+  worldEvents: EvidenceEvent[];
+}) {
+  if (weatherEvents.length === 0 && worldEvents.length === 0) {
+    return <p className="text-sm text-slate-500">No evidence events matched this shipment.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {weatherEvents.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-sm font-semibold text-white">Weather & Marine</h4>
+          <div className="space-y-2">
+            {weatherEvents.map((event, index) => (
+              <CompactEvidenceCard key={`${event.title}-${index}`} event={event} />
+            ))}
+          </div>
+        </div>
+      )}
+      {worldEvents.length > 0 && (
+        <div>
+          <h4 className="mb-2 text-sm font-semibold text-white">News & Trade</h4>
+          <div className="space-y-2">
+            {worldEvents.map((event, index) => (
+              <CompactEvidenceCard key={`${event.title}-${index}`} event={event} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MitigationDebugContent({
+  actions,
+  escalationRequired,
+}: {
+  actions: string[];
+  escalationRequired: boolean;
+}) {
+  return (
+    <div className="space-y-3">
+      {actions.map((action, index) => (
+        <div key={action} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary-300">
+            Action {index + 1}
+          </div>
+          <p className="break-words text-sm leading-6 text-slate-200">{action}</p>
+        </div>
+      ))}
+      {escalationRequired && (
+        <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-danger-300">
+            <AlertCircle className="h-4 w-4" />
+            Escalation Required
+          </div>
+          <p className="mt-2 text-sm text-slate-300">
+            This shipment requires immediate attention from procurement and logistics leadership.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LiveContextDebugContent({
+  shipment,
+  weatherContextEvents,
+  worldContextEvents,
+}: {
+  shipment: ShipmentInput;
+  weatherContextEvents: EvidenceEvent[];
+  worldContextEvents: EvidenceEvent[];
+}) {
+  const liveEvents = [...weatherContextEvents, ...worldContextEvents];
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+        <h4 className="mb-3 text-sm font-semibold text-white">Shipment Context</h4>
+        <ContextRow label="Supplier" value={shipment.supplier} />
+        <ContextRow label="Material" value={shipment.material} />
+        <ContextRow label="Quantity" value={String(shipment.quantity)} />
+        <ContextRow label="Lead Time" value={`${shipment.lead_time_days} days`} />
+        <ContextRow label="Inventory Cover" value={`${shipment.inventory_days_cover} days`} />
+        <ContextRow label="Declared Value" value={formatCurrency(shipment.declared_value_usd)} />
+        <ContextRow label="ETA" value={shipment.eta_date || 'Not set'} />
+      </div>
+
+      <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+        <h4 className="mb-3 text-sm font-semibold text-white">Live Weather & News</h4>
+        {liveEvents.length > 0 ? (
+          <div className="space-y-2">
+            {liveEvents.slice(0, 8).map((event, index) => (
+              <div key={`${event.title}-${index}`} className="text-xs text-slate-300">
+                <span className={`mr-1 rounded px-1.5 py-0.5 font-medium ${severityClass(event.severity)}`}>
+                  {event.severity}
+                </span>
+                {' '}
+                {event.title}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">No non-scoring context events were returned for this shipment.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -496,6 +576,15 @@ function InlineError({ message }: { message: string }) {
   );
 }
 
+function RouteChip({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2">
+      <span className="shrink-0 text-xs uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="min-w-0 truncate text-slate-200">{value}</span>
+    </span>
+  );
+}
+
 function formatPriority(priority: ShipmentInput['priority']): string {
   const numeric = Number(priority);
   if (Number.isFinite(numeric)) {
@@ -521,6 +610,86 @@ function severityClass(severity: string): string {
   if (normalized === 'high') return 'bg-orange-500/10 text-orange-300';
   if (normalized === 'medium') return 'bg-yellow-500/10 text-yellow-300';
   return 'bg-green-500/10 text-green-300';
+}
+
+function riskTone(level: string) {
+  const tones = {
+    low: {
+      hex: '#22c55e',
+      border: 'border-green-500/30',
+      panel: 'bg-[linear-gradient(135deg,rgba(20,83,45,0.26),rgba(2,6,23,0.96)_42%,rgba(15,23,42,0.95))]',
+      badge: 'border-green-500/30 bg-green-500/10 text-green-300',
+      strip: 'bg-green-400',
+      shadow: 'shadow-green-950/20',
+    },
+    medium: {
+      hex: '#eab308',
+      border: 'border-yellow-500/30',
+      panel: 'bg-[linear-gradient(135deg,rgba(113,63,18,0.28),rgba(2,6,23,0.96)_42%,rgba(15,23,42,0.95))]',
+      badge: 'border-yellow-500/30 bg-yellow-500/10 text-yellow-200',
+      strip: 'bg-yellow-400',
+      shadow: 'shadow-yellow-950/20',
+    },
+    high: {
+      hex: '#f97316',
+      border: 'border-orange-500/30',
+      panel: 'bg-[linear-gradient(135deg,rgba(124,45,18,0.32),rgba(2,6,23,0.96)_42%,rgba(15,23,42,0.95))]',
+      badge: 'border-orange-500/30 bg-orange-500/10 text-orange-200',
+      strip: 'bg-orange-400',
+      shadow: 'shadow-orange-950/20',
+    },
+    critical: {
+      hex: '#ef4444',
+      border: 'border-danger-500/30',
+      panel: 'bg-[linear-gradient(135deg,rgba(127,29,29,0.36),rgba(2,6,23,0.96)_42%,rgba(15,23,42,0.95))]',
+      badge: 'border-danger-500/30 bg-danger-500/10 text-danger-200',
+      strip: 'bg-danger-400',
+      shadow: 'shadow-danger-950/20',
+    },
+  };
+
+  return tones[level as keyof typeof tones] ?? tones.medium;
+}
+
+function formatDecision(decision: string): string {
+  return decision.replace(/_/g, ' ');
+}
+
+function parseActionOwner(action: string): { owner: string; text: string } {
+  const match = action.match(/^\s*\[([^\]]+)\]\s*(.*)$/);
+  if (match) {
+    return { owner: match[1], text: match[2] || action };
+  }
+
+  const lower = action.toLowerCase();
+  if (lower.includes('supplier')) return { owner: 'Supplier', text: action };
+  if (lower.includes('carrier') || lower.includes('vessel') || lower.includes('flight')) return { owner: 'Carrier', text: action };
+  if (lower.includes('customs') || lower.includes('compliance')) return { owner: 'Compliance', text: action };
+  if (lower.includes('stock') || lower.includes('inventory') || lower.includes('plant')) return { owner: 'Plant', text: action };
+  if (lower.includes('forwarder') || lower.includes('route') || lower.includes('port')) return { owner: 'Forwarder', text: action };
+  return { owner: 'Procurement', text: action };
+}
+
+function driverLevel(value: number): { bar: string; badge: string; dot: string } {
+  if (value >= 7) {
+    return {
+      bar: 'bg-danger-400',
+      badge: 'border-danger-500/30 bg-danger-500/10 text-danger-200',
+      dot: 'bg-danger-400 shadow-lg shadow-danger-500/30',
+    };
+  }
+  if (value >= 4) {
+    return {
+      bar: 'bg-orange-400',
+      badge: 'border-orange-500/30 bg-orange-500/10 text-orange-200',
+      dot: 'bg-orange-400 shadow-lg shadow-orange-500/30',
+    };
+  }
+  return {
+    bar: 'bg-green-400',
+    badge: 'border-green-500/30 bg-green-500/10 text-green-200',
+    dot: 'bg-green-400 shadow-lg shadow-green-500/30',
+  };
 }
 
 function isEventSource(event: EvidenceEvent, terms: string[]): boolean {
@@ -589,62 +758,94 @@ function driverExplanation(feature: string): string {
 
 function CompactRiskSummary({ result }: { result: StrandsShipmentRiskResponse }) {
   const advice = result.result;
-  const levelClass = {
-    low: 'text-green-400 bg-green-500/10 border-green-500/30',
-    medium: 'text-yellow-300 bg-yellow-500/10 border-yellow-500/30',
-    high: 'text-orange-300 bg-orange-500/10 border-orange-500/30',
-    critical: 'text-danger-400 bg-danger-500/10 border-danger-500/30',
-  }[advice.risk_level];
+  const tone = riskTone(advice.risk_level);
 
-  const topActions = advice.recommended_actions.slice(0, 2);
+  const topActions = advice.recommended_actions.slice(0, 3);
+  const scoreAngle = Math.min(Math.max(advice.risk_score, 0), 10) * 36;
 
   return (
-    <div className={`card min-w-0 space-y-4 overflow-hidden border ${levelClass}`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2">
-            <span className={`rounded px-3 py-1 text-sm font-semibold uppercase ${levelClass}`}>
-              {advice.risk_level} RISK
+    <section className={`relative min-w-0 overflow-hidden rounded-xl border ${tone.border} ${tone.panel} p-5 shadow-2xl ${tone.shadow}`}>
+      <div className={`absolute inset-x-0 top-0 h-1 ${tone.strip}`} />
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 flex-1 space-y-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${tone.badge}`}>
+              {advice.risk_level} risk
             </span>
-            <span className="text-xs text-slate-500">{result.orchestration_method}</span>
-          </div>
-          <div className="flex items-baseline gap-3">
-            <span className="text-4xl font-bold text-white">{advice.risk_score.toFixed(1)}</span>
-            <span className="text-lg text-slate-400">/ 10</span>
-            <span className={`ml-2 rounded px-2 py-1 text-sm font-medium ${levelClass}`}>
-              {advice.decision.toUpperCase()}
+            <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-xs text-slate-400">
+              {result.orchestration_method}
+            </span>
+            <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase ${tone.badge}`}>
+              {formatDecision(advice.decision)}
             </span>
           </div>
-          <p className="mt-2 text-sm text-slate-300">{advice.reason}</p>
-        </div>
 
-        <div className="shrink-0 space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-500">Confidence:</span>
-            <span className="font-medium text-green-400">{advice.confidence_score}%</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-slate-500">Method:</span>
-            <span className="font-medium text-slate-300">{advice.scoring_method.split('_').slice(0, 2).join(' ')}</span>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[132px_minmax(0,1fr)]">
+            <div
+              className="flex aspect-square w-32 items-center justify-center rounded-full p-2"
+              style={{
+                background: `conic-gradient(${tone.hex} ${scoreAngle}deg, rgba(30,41,59,0.75) 0deg)`,
+              }}
+            >
+              <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-slate-950">
+                <span className="text-4xl font-bold text-white">{advice.risk_score.toFixed(1)}</span>
+                <span className="text-xs uppercase tracking-wide text-slate-500">of 10</span>
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <h2 className="text-xl font-semibold text-white">Control Tower Recommendation</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{advice.reason}</p>
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <MetricPill label="Confidence" value={`${advice.confidence_score}%`} />
+                <MetricPill label="Method" value={advice.scoring_method.split('_').slice(0, 2).join(' ')} />
+                <MetricPill label="Actions" value={String(advice.recommended_actions.length)} />
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {topActions.length > 0 && (
-        <div className="border-t border-slate-800 pt-4">
-          <h3 className="mb-3 text-sm font-semibold text-white">Quick Actions</h3>
-          <div className="space-y-2">
+        <div className="mt-5 border-t border-slate-800/80 pt-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-white">Immediate Actions</h3>
+            <span className="text-xs text-slate-500">Owner tagged</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
             {topActions.map((action, index) => (
-              <div key={action} className="flex items-start gap-2 rounded-lg bg-slate-950/50 p-3">
-                <span className="shrink-0 mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary-500/20 text-xs font-medium text-primary-300">
-                  {index + 1}
-                </span>
-                <span className="text-sm text-slate-200">{action}</span>
-              </div>
+              <ActionCard key={action} action={action} index={index} />
             ))}
           </div>
         </div>
       )}
+    </section>
+  );
+}
+
+function MetricPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-1 truncate text-sm font-semibold text-slate-100">{value}</div>
+    </div>
+  );
+}
+
+function ActionCard({ action, index }: { action: string; index: number }) {
+  const parsed = parseActionOwner(action);
+
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/70 p-3 transition-colors hover:border-slate-700 hover:bg-slate-900/80">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-xs font-semibold text-primary-200">
+                  {index + 1}
+                </span>
+        <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-200">
+          {parsed.owner}
+        </span>
+      </div>
+      <p className="text-sm leading-6 text-slate-200">{parsed.text}</p>
     </div>
   );
 }
@@ -658,13 +859,23 @@ function KeyRiskDrivers({ result }: { result: StrandsShipmentRiskResponse }) {
   const evidenceEvents = result.result.evidence_events ?? [];
 
   return (
-    <div className="card min-w-0 space-y-4 overflow-hidden">
-      <div className="flex items-center gap-2">
-        <AlertCircle className="h-5 w-5 text-orange-400" />
-        <h2 className="text-lg font-semibold text-white">What Affects This Shipment</h2>
+    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl shadow-slate-950/30">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-orange-400/30 bg-orange-400/10 text-orange-300">
+            <AlertCircle className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-white">What Affects This Shipment</h2>
+            <p className="text-xs text-slate-500">Ranked model drivers with route evidence</p>
+          </div>
+        </div>
+        <span className="w-fit rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-xs text-slate-400">
+          Top {topDrivers.length}
+        </span>
       </div>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
         {topDrivers.map(([feature, value]) => {
           const explanation = driverExplanation(feature);
           const relatedEvent = evidenceEvents.find((e) => {
@@ -674,44 +885,40 @@ function KeyRiskDrivers({ result }: { result: StrandsShipmentRiskResponse }) {
             if (feature.includes('news') && source.includes('news')) return true;
             return false;
           });
+          const level = driverLevel(value);
+          const eventLink = relatedEvent ? getEventLink(relatedEvent) : '';
 
           return (
-            <div key={feature} className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
-              <div className="flex items-start justify-between gap-3">
+            <article key={feature} className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 p-4 transition-colors hover:border-slate-700">
+              <div className={`absolute inset-y-0 left-0 w-1 ${level.bar}`} />
+              <div className="flex items-start justify-between gap-3 pl-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="mb-2 flex items-center gap-2">
                     <span className="text-sm font-medium text-white">{FEATURE_LABELS[feature] || feature}</span>
-                    <span className="shrink-0 rounded bg-slate-800 px-2 py-0.5 text-xs font-mono text-slate-400">
+                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-mono ${level.badge}`}>
                       {value.toFixed(1)}
                     </span>
                   </div>
-                  <p className="text-sm text-slate-300">{explanation}</p>
+                  <p className="text-sm leading-6 text-slate-300">{explanation}</p>
                   {relatedEvent && (
                     <a
-                      href={getEventLink(relatedEvent) || '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-2 inline-flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300"
+                      href={eventLink || undefined}
+                      target={eventLink ? '_blank' : undefined}
+                      rel={eventLink ? 'noopener noreferrer' : undefined}
+                      className={`mt-3 inline-flex max-w-full items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-cyan-200 transition-colors ${eventLink ? 'hover:border-cyan-400/40 hover:text-cyan-100' : 'cursor-default'}`}
                     >
                       <LinkIcon className="h-3 w-3" />
-                      Source: {relatedEvent.title.slice(0, 40)}...
+                      <span className="truncate">Source: {relatedEvent.title}</span>
                     </a>
                   )}
                 </div>
-                <div className="shrink-0">
-                  <div
-                    className="h-2 w-2 rounded-full"
-                    style={{
-                      backgroundColor: value >= 7 ? '#ef4444' : value >= 4 ? '#f59e0b' : '#22c55e',
-                    }}
-                  />
-                </div>
+                <div className={`mt-1 h-3 w-3 shrink-0 rounded-full ${level.dot}`} />
               </div>
-            </div>
+            </article>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
 
