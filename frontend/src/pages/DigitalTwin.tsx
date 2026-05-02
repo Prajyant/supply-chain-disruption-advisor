@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { networkApi } from '../services/api';
 import ReactFlow, {
@@ -12,10 +13,13 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { RefreshCw, Zap } from 'lucide-react';
 import React from 'react';
+import { NodeDetail } from '../components/NodeDetail';
 
 const nodeTypes = {};
 
 export function DigitalTwin() {
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
   const { data: network, isLoading, refetch } = useQuery({
     queryKey: ['network'],
     queryFn: () => networkApi.getNetwork().then((res) => res.data),
@@ -71,6 +75,10 @@ export function DigitalTwin() {
     refetch();
   };
 
+  const onNodeClick = useCallback((_event: any, node: Node) => {
+    setSelectedNodeId(node.id);
+  }, []);
+
   if (isLoading) {
     return (
       <div className="p-8">
@@ -104,37 +112,54 @@ export function DigitalTwin() {
         </div>
       </div>
 
-      <div className="flex-1 bg-slate-900 rounded-lg border border-slate-800 overflow-hidden">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          fitView
-          nodeTypes={nodeTypes}
-        >
-          <Background color="#1e293b" gap={16} />
-          <Controls />
-          <MiniMap
-            nodeColor={(node) => getNodeColor(node.data?.status || 'normal')}
-            maskColor="rgba(0, 0, 0, 0.8)"
-          />
-        </ReactFlow>
+      <div className="flex-1 flex gap-4 overflow-hidden">
+        {/* Graph panel */}
+        <div className={`flex-1 bg-slate-900 rounded-lg border border-slate-800 overflow-hidden transition-all ${selectedNodeId ? 'w-2/3' : 'w-full'}`}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeClick={onNodeClick}
+            fitView
+            nodeTypes={nodeTypes}
+          >
+            <Background color="#1e293b" gap={16} />
+            <Controls />
+            <MiniMap
+              nodeColor={(node) => getNodeColor(node.data?.status || 'normal')}
+              maskColor="rgba(0, 0, 0, 0.8)"
+            />
+          </ReactFlow>
+        </div>
+
+        {/* NodeDetail panel (Phase 3) */}
+        {selectedNodeId && (
+          <div className="w-1/3 min-w-[320px]">
+            <NodeDetail
+              nodeId={selectedNodeId}
+              onClose={() => setSelectedNodeId(null)}
+            />
+          </div>
+        )}
       </div>
 
-      <div className="mt-4 flex gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-green-500" />
-          <span className="text-slate-400">Normal</span>
+      <div className="mt-4 flex justify-between items-center text-sm">
+        <div className="flex gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-green-500" />
+            <span className="text-slate-400">Normal</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-yellow-500" />
+            <span className="text-slate-400">At Risk</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-danger-500" />
+            <span className="text-slate-400">Critical</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-yellow-500" />
-          <span className="text-slate-400">At Risk</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-danger-500" />
-          <span className="text-slate-400">Critical</span>
-        </div>
+        <span className="text-slate-500 text-xs">Click a node to view details</span>
       </div>
     </div>
   );

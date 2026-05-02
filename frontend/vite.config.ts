@@ -32,12 +32,32 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/shipments': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/agents': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/vessels': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/api/node': {
         target: 'http://localhost:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/node/, '/node'),
       },
       '/graph': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/playbooks': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/feedback': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

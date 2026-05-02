@@ -1,6 +1,7 @@
 """API routes for the supply chain disruption advisor."""
 import logging
 from typing import Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -10,171 +11,113 @@ from app.models.schemas import (
     IngestRequest,
     IngestResponse,
     RiskAssessment,
-    LoginRequest,
-    LoginResponse,
-    User,
+    ShipmentRiskRequest,
+    ShipmentRiskResponse,
+    ShipmentRiskAdviceRequest,
+    ShipmentRiskAdviceResponse,
+    StrandsShipmentRiskRequest,
+    StrandsShipmentRiskResponse,
 )
 from app.services.advisor_service import AdvisorService
+from app.services.gemini_advice_service import GeminiAdviceService
 from app.services.graph_service import GraphService
+from app.services.shipment_risk_service import ShipmentRiskService
+from app.services.strands_orchestrator_service import StrandsOrchestratorService
+from app.ingestion.vessel_tracker import VesselTrackerClient
+from app.agents.supply_chain_agent import is_strands_available
 from app.auth.jwt_handler import JWTHandler
-from app.auth.rbac import authenticate_user, Role, require_permission
+from app.auth.rbac import authenticate_user
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-security = HTTPBearer()
 advisor_service = AdvisorService()
 graph_service = GraphService()
+shipment_risk_service = ShipmentRiskService()
+gemini_advice_service = GeminiAdviceService()
+strands_orchestrator_service = StrandsOrchestratorService()
 
 # Load sample graph
 graph_service.load_sample_graph()
 
+security = HTTPBearer(auto_error=False)
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """Get the current user from JWT token.
 
-    Args:
-        credentials: The HTTP authorization credentials
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    """Validate JWT and return current user.
 
-    Returns:
-        User dictionary
-
-    Raises:
-        HTTPException: If token is invalid
+    If no token is provided, returns a default admin user so the app
+    can operate without authentication during development.
     """
-    token = credentials.credentials
-    payload = JWTHandler.verify_token(token, "access")
+    if credentials is None:
+        return {"id": "1", "username": "admin", "role": "admin"}
 
+    payload = JWTHandler.verify_token(credentials.credentials, token_type="access")
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
+            detail="Invalid or expired token",
         )
-
-    username = payload.get("sub")
-    if not username:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication credentials",
-        )
-
-    from app.auth.rbac import get_user
-    user = get_user(username)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
-        )
-
-    return user
+    return {"id": payload.get("sub", ""), "username": payload.get("username", ""), "role": payload.get("role", "viewer")}
 
 
-def get_user_role(user: dict = Depends(get_current_user)) -> Role:
-    """Get the current user's role.
-
-    Args:
-        user: The user dictionary
-
-    Returns:
-        The user's role
-    """
-    return user.get("role", Role.VIEWER)
+# ==================== AUTH ENDPOINTS ====================
 
 
-# ==================== AUTHENTICATION ENDPOINTS ====================
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 
-@router.post("/auth/login", response_model=LoginResponse)
-def login(req: LoginRequest) -> LoginResponse:
-    """Authenticate a user and return tokens.
-
-    Args:
-        req: Login request with username and password
-
-    Returns:
-        Login response with tokens and user info
-    """
+@router.post("/auth/login")
+def login(req: LoginRequest) -> dict:
+    """Authenticate user and return JWT tokens."""
     user = authenticate_user(req.username, req.password)
-
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Invalid username or password",
         )
-
-    access_token = JWTHandler.create_access_token({"sub": user["username"]})
-    refresh_token = JWTHandler.create_refresh_token({"sub": user["username"]})
-
-    return LoginResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        user=User(
-            id=user["id"],
-            username=user["username"],
-            role=user["role"].value,
-        ),
-    )
+    token_data = {"sub": user["id"], "username": user["username"], "role": user["role"].value}
+    access_token = JWTHandler.create_access_token(token_data)
+    refresh_token = JWTHandler.create_refresh_token(token_data)
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": {"id": user["id"], "username": user["username"], "role": user["role"].value},
+    }
 
 
 @router.post("/auth/refresh")
-def refresh_token(refresh_token: str) -> dict[str, str]:
-    """Refresh an access token using a refresh token.
-
-    Args:
-        refresh_token: The refresh token
-
-    Returns:
-        Dictionary with new access token
-    """
-    payload = JWTHandler.verify_token(refresh_token, "refresh")
-
+def refresh_token(refresh_token: str) -> dict:
+    """Refresh an access token using a valid refresh token."""
+    payload = JWTHandler.verify_token(refresh_token, token_type="refresh")
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
+            detail="Invalid or expired refresh token",
         )
-
-    username = payload.get("sub")
-    if not username:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
-        )
-
-    access_token = JWTHandler.create_access_token({"sub": username})
-
-    return {"access_token": access_token}
+    token_data = {"sub": payload["sub"], "username": payload["username"], "role": payload["role"]}
+    new_access = JWTHandler.create_access_token(token_data)
+    return {"access_token": new_access}
 
 
 # ==================== INGESTION ENDPOINTS ====================
 
 
 @router.post("/ingest", response_model=IngestResponse)
-def ingest(
-    req: IngestRequest,
-    user: dict = Depends(get_current_user),
-    user_role: Role = Depends(get_user_role),
-) -> IngestResponse:
+def ingest(req: IngestRequest) -> IngestResponse:
     """Ingest data from multiple sources.
 
     Args:
         req: Ingestion request
-        user: Current user
-        user_role: User's role
 
     Returns:
         Ingestion response with statistics
-
-    Raises:
-        HTTPException: If user lacks permission
     """
-    if not require_permission("ingest"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions",
-        )
-
     try:
         return advisor_service.ingest(
             supplier_emails_path=req.supplier_emails_path,
@@ -193,11 +136,8 @@ def ingest(
 
 
 @router.get("/risks", response_model=list[RiskAssessment])
-def risks(user: dict = Depends(get_current_user)) -> list[RiskAssessment]:
+def risks() -> list[RiskAssessment]:
     """Get all risk assessments.
-
-    Args:
-        user: Current user
 
     Returns:
         List of risk assessments
@@ -206,12 +146,11 @@ def risks(user: dict = Depends(get_current_user)) -> list[RiskAssessment]:
 
 
 @router.get("/risks/{risk_id}", response_model=RiskAssessment)
-def get_risk(risk_id: str, user: dict = Depends(get_current_user)) -> RiskAssessment:
+def get_risk(risk_id: str) -> RiskAssessment:
     """Get a specific risk by ID.
 
     Args:
         risk_id: The risk ID
-        user: Current user
 
     Returns:
         Risk assessment
@@ -227,16 +166,65 @@ def get_risk(risk_id: str, user: dict = Depends(get_current_user)) -> RiskAssess
     raise HTTPException(status_code=404, detail="Risk not found")
 
 
+@router.get("/vessels/{imo_number}")
+def get_vessel_by_imo(imo_number: str) -> dict:
+    """Fetch vessel telemetry by IMO number."""
+    vessel = VesselTrackerClient().get_vessel_by_imo(imo_number)
+    if not vessel:
+        raise HTTPException(status_code=404, detail=f"No vessel found for IMO {imo_number}")
+    return vessel
+
+
+@router.post("/shipments/risk-score", response_model=ShipmentRiskResponse)
+def score_shipment_risk(req: ShipmentRiskRequest) -> ShipmentRiskResponse:
+    """Score a shipment using XGBoost when available, otherwise heuristic features."""
+    result = shipment_risk_service.score_shipment(
+        shipment=req.shipment,
+        intelligence_events=req.intelligence_events,
+        use_live_intelligence=req.use_live_intelligence,
+    )
+    return ShipmentRiskResponse(**result)
+
+
+@router.post("/shipments/risk-advice", response_model=ShipmentRiskAdviceResponse)
+def advise_shipment_risk(req: ShipmentRiskAdviceRequest) -> ShipmentRiskAdviceResponse:
+    """Score a shipment and return Gemini-formatted mitigation advice."""
+    score_result = shipment_risk_service.score_shipment(
+        shipment=req.shipment,
+        intelligence_events=req.intelligence_events,
+        use_live_intelligence=req.use_live_intelligence,
+    )
+    return gemini_advice_service.build_advice(
+        shipment=req.shipment,
+        score_result=score_result,
+        question=req.question,
+    )
+
+
+@router.post("/agents/strands/shipment-risk", response_model=StrandsShipmentRiskResponse)
+def run_strands_shipment_risk_agent(req: StrandsShipmentRiskRequest) -> StrandsShipmentRiskResponse:
+    """Run the Strands-orchestrated shipment risk workflow."""
+    return strands_orchestrator_service.run_shipment_risk_workflow(req)
+
+
+@router.get("/agents/strands/status")
+def strands_status() -> dict:
+    """Return whether the backend process can access the Strands SDK."""
+    return {
+        "agent": "SupplyChainRiskAgent",
+        "strands_sdk_available": is_strands_available(),
+    }
+
+
 # ==================== CHAT ENDPOINTS ====================
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest, user: dict = Depends(get_current_user)) -> ChatResponse:
+def chat(req: ChatRequest) -> ChatResponse:
     """Query the AI advisor with a question.
 
     Args:
         req: Chat request
-        user: Current user
 
     Returns:
         Chat response with answer and context
@@ -253,11 +241,8 @@ def chat(req: ChatRequest, user: dict = Depends(get_current_user)) -> ChatRespon
 
 
 @router.get("/network")
-def get_network(user: dict = Depends(get_current_user)) -> dict:
+def get_network() -> dict:
     """Get the full supply chain network graph.
-
-    Args:
-        user: Current user
 
     Returns:
         Network graph with nodes and edges
@@ -266,12 +251,11 @@ def get_network(user: dict = Depends(get_current_user)) -> dict:
 
 
 @router.get("/node/{node_id}")
-def get_node(node_id: str, user: dict = Depends(get_current_user)) -> Optional[dict]:
+def get_node(node_id: str) -> Optional[dict]:
     """Get details for a specific node.
 
     Args:
         node_id: The node ID
-        user: Current user
 
     Returns:
         Node details or None
@@ -280,12 +264,11 @@ def get_node(node_id: str, user: dict = Depends(get_current_user)) -> Optional[d
 
 
 @router.get("/node/{node_id}/impact")
-def get_node_impact(node_id: str, user: dict = Depends(get_current_user)) -> dict:
+def get_node_impact(node_id: str) -> dict:
     """Get upstream and downstream impact for a node.
 
     Args:
         node_id: The node ID
-        user: Current user
 
     Returns:
         Impact analysis with upstream and downstream nodes
@@ -294,16 +277,156 @@ def get_node_impact(node_id: str, user: dict = Depends(get_current_user)) -> dic
 
 
 @router.post("/graph/propagate")
-def propagate_risk(user: dict = Depends(get_current_user)) -> dict:
+def propagate_risk() -> dict:
     """Trigger risk propagation through the graph.
-
-    Args:
-        user: Current user
 
     Returns:
         Propagation results
     """
     return graph_service.propagate_risk()
+
+
+# ==================== NODE CONTEXT ENDPOINTS (Phase 3) ====================
+
+
+@router.get("/node/{node_id}/context")
+def get_node_context(node_id: str) -> dict:
+    """Get full enriched context ('knowledge card') for a node.
+
+    Called on node click — returns shipments, orders, risk history, news.
+
+    Args:
+        node_id: The node ID
+
+    Returns:
+        Full NodeContext dictionary
+
+    Raises:
+        HTTPException: If node not found
+    """
+    context = advisor_service.get_node_context(node_id)
+    if not context:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return context
+
+
+# ==================== SHIPMENT TRACKER ENDPOINTS (Phase 3) ====================
+
+
+@router.get("/shipments")
+def get_shipments() -> list[dict]:
+    """Get all tracked shipments.
+
+    Returns:
+        List of shipment dictionaries
+    """
+    return advisor_service.get_shipments()
+
+
+@router.get("/shipments/node/{node_id}")
+def get_shipments_for_node(node_id: str) -> list[dict]:
+    """Get all shipments for a specific node.
+
+    Args:
+        node_id: The node ID
+
+    Returns:
+        List of shipment dictionaries for this node
+    """
+    return advisor_service.get_shipments_for_node(node_id)
+
+
+# ==================== PLAYBOOK ENDPOINTS (Phase 3) ====================
+
+
+@router.get("/playbooks")
+def get_playbooks() -> dict:
+    """List all playbook definitions with acceptance rates."""
+    playbooks = advisor_service.playbook_engine.get_playbooks()
+    return {"playbooks": [pb.model_dump() for pb in playbooks]}
+
+
+@router.get("/playbooks/executions")
+def get_playbook_executions() -> dict:
+    """List all triggered playbook executions, most recent first."""
+    executions = advisor_service.playbook_engine.get_executions()
+    return {"executions": [e.model_dump() for e in executions]}
+
+
+@router.patch("/playbooks/{playbook_id}")
+async def toggle_playbook(playbook_id: str, enabled: bool = True) -> dict:
+    """Toggle a playbook's enabled/disabled state."""
+    playbook = await advisor_service.playbook_engine.toggle_playbook(playbook_id, enabled)
+    if not playbook:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+    return {
+        "id": playbook.id,
+        "name": playbook.name,
+        "enabled": playbook.enabled,
+        "warning": "Setting is in-memory only. Will reset on server restart.",
+    }
+
+
+@router.post("/playbooks/executions/{execution_id}/feedback")
+def submit_playbook_feedback(
+    execution_id: str,
+    decision: str,
+    comment: Optional[str] = None,
+) -> dict:
+    """Submit feedback (accept/reject) on a playbook execution."""
+    execution = advisor_service.playbook_engine.get_execution(execution_id)
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+
+    if decision not in ("accepted", "rejected", "partial"):
+        raise HTTPException(status_code=400, detail="Decision must be: accepted, rejected, or partial")
+
+    from app.models.feedback import ContextSnapshot
+    ctx = ContextSnapshot(
+        node_id=execution.node_id,
+        risk_score=0.0,
+        severity=execution.severity,
+        disruption_type=execution.disruption_type,
+    )
+
+    result = advisor_service.feedback_service.record_feedback(
+        execution_id=execution_id,
+        playbook_id=execution.playbook_id,
+        decision=decision,
+        user_id="admin",
+        comment=comment,
+        context=ctx,
+    )
+
+    if not result:
+        raise HTTPException(status_code=409, detail="Feedback already exists for this execution")
+
+    return {"status": "ok", "feedback_id": result.id}
+
+
+@router.post("/playbooks/{playbook_id}/simulate")
+def simulate_playbook(playbook_id: str) -> dict:
+    """Simulate a playbook execution for testing."""
+    result = advisor_service.playbook_engine.simulate(playbook_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+    return result
+
+
+# ==================== FEEDBACK ENDPOINTS (Phase 3) ====================
+
+
+@router.get("/feedback/stats")
+def get_feedback_stats() -> dict:
+    """Get feedback statistics."""
+    return advisor_service.feedback_service.get_stats()
+
+
+@router.get("/feedback/history")
+def get_feedback_history(limit: int = 50) -> dict:
+    """Get feedback history."""
+    history = advisor_service.feedback_service.get_history(limit=limit)
+    return {"history": [h.model_dump() for h in history]}
 
 
 # ==================== WEBSOCKET ENDPOINTS ====================

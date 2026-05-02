@@ -1,0 +1,12 @@
+shipment_id,supplier,origin,destination,route_nodes,imo_number,mmsi,vessel_name,vessel_latitude,vessel_longitude,vessel_status,vessel_speed_knots,vessel_course_degrees,vessel_progress_percent,transport_mode,material,quantity,lead_time_days,inventory_days_cover,supplier_delay_count,priority,declared_value_usd,departure_date,eta_date,flight_callsign,flight_icao24,flight_altitude_m
+SHP-1001,Evergreen Marine,Yantian,Rotterdam,"Yantian|Singapore|Suez Canal|Rotterdam",9811000,353136000,EVER GIVEN,28.94,49.23,UNDERWAY,13.4,287,62,sea,electronics,1200,22,4,1,3,350000,2026-04-28,2026-05-20,,,
+SHP-1002,MSC,Shanghai,Hamburg,"Shanghai|Singapore|Suez Canal|Hamburg",9703291,255806260,MSC OSCAR,14.5,52.3,ANCHORED,0.4,310,31,sea,PCB assemblies,3000,28,3,3,3,620000,2026-04-26,2026-05-24,,,
+SHP-1003,COSCO Shipping,Ras Tanura,Ningbo,"Ras Tanura|Hormuz|Singapore|Ningbo",9795736,477339800,COSCO SHIPPING UNIVERSE,12.8,68.4,UNDERWAY,14.1,75,48,sea,chemical feedstock,800,18,6,2,2,480000,2026-04-29,2026-05-17,,,
+SHP-1004,Pacific Freight Partners,Busan,Los Angeles,"Busan|Pacific Ocean|Los Angeles",,564410000,MV PACIFIC STAR,35.2,142.6,UNDERWAY,17.6,82,44,sea,mixed cargo,950,14,8,1,1,180000,2026-04-24,2026-05-08,,,
+SHP-1005,Nova Plastics,Rotterdam,Newark,"Rotterdam|North Atlantic|Newark",,244140000,MV NORTH ATLANTIC,51.9,3.8,MOORED,0.0,250,8,sea,polymer pellets,2000,10,2,4,3,275000,2026-04-29,2026-05-09,,,
+SHP-1006,Meridian Chemicals,Mundra,Newark,"Mundra|Suez Canal|Gibraltar|Newark",,419001200,MV GUJARAT TRADER,22.9,69.7,WAITING,0.6,210,12,sea,chemical feedstock,800,18,5,2,2,320000,2026-05-01,2026-05-19,,,
+SHP-2001,FedEx Express,Shanghai,Memphis,"Shanghai|Pacific Ocean|Los Angeles|Memphis",,,,52.1,-168.4,IN_FLIGHT,499.5,48,55,air,semiconductors,400,2,1,0,3,890000,2026-05-01,2026-05-02,FDX5678,,10668
+SHP-2002,Emirates SkyCargo,Dubai,Frankfurt,"Dubai|Frankfurt",,,,38.2,42.6,IN_FLIGHT,482.0,315,60,air,pharmaceutical supplies,150,1,2,1,3,1250000,2026-05-01,2026-05-01,UAE9872,,11582
+SHP-3001,Midwest Components,Chicago,Dallas,"Chicago|St Louis|Dallas",,,,,,,,,0,ground,standard fasteners,500,3,42,0,0,18000,2026-05-01,2026-05-04,,,
+SHP-3002,Ontario Packaging,Toronto,Detroit,"Toronto|Windsor|Detroit",,,,,,,,,0,ground,packaging cartons,1200,2,35,0,0,22000,2026-05-01,2026-05-03,,,
+SHP-3003,Bavaria Controls,Munich,Frankfurt,"Munich|Nuremberg|Frankfurt",,,,,,,,,0,ground,control housings,300,1,48,0,0,15000,2026-05-01,2026-05-02,,,

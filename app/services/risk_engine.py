@@ -192,13 +192,16 @@ class RiskAnalyzer:
 ## Task
 Identify which active operations could be disrupted by current world events.
 Consider geographic overlap, material type, trade routes, geopolitical tensions,
-weather events, and sanctions.
+weather events, trade policy, UN/WTO trade developments, customs restrictions,
+sanctions, port conditions, and air/sea route disruption.
 
 Rules:
 - Only report genuine, specific connections — do NOT flag everything.
 - A shipment from Shanghai is affected by China trade war news.
 - A chemical shipment from Gujarat is affected by Indian port/weather news.
 - A booking via Busan is affected by Korea/Pacific shipping disruptions.
+- A shipment through a port or airport is affected by severe weather near that node.
+- A cross-border shipment is affected by tariffs, export bans, customs delays, or sanctions.
 - Do NOT flag Canada whiskey tariffs as affecting a polymer shipment from Munich.
 
 For each genuine connection, return a JSON object with:
@@ -321,12 +324,16 @@ If no genuine connections exist, return: []"""
         "perth": ["perth", "australia", "australian"],
         "suez": ["suez", "suez canal"],
         "hormuz": ["hormuz", "persian gulf"],
+        "singapore": ["singapore"],
+        "mundra": ["mundra", "gujarat", "india", "indian"],
+        "suez canal": ["suez canal", "suez"],
+        "dubai": ["dubai", "uae", "united arab emirates"],
     }
 
     HEURISTIC_NEWS_SEVERITY: dict[str, list[str]] = {
-        "critical": ["war", "conflict", "sanctions", "embargo", "ban", "shutdown", "fire", "bankruptcy"],
-        "high": ["strike", "flood", "earthquake", "typhoon", "hurricane", "cyberattack", "disruption", "congestion"],
-        "medium": ["delay", "shortage", "tension", "tariff", "dispute"],
+        "critical": ["war", "conflict", "sanctions", "embargo", "export ban", "shutdown", "fire", "bankruptcy", "severe thunderstorm"],
+        "high": ["strike", "flood", "earthquake", "typhoon", "hurricane", "cyberattack", "disruption", "congestion", "tariff", "customs delay"],
+        "medium": ["delay", "shortage", "tension", "trade restriction", "dispute", "heavy rain", "adverse weather"],
     }
 
     def _heuristic_cross_reference(

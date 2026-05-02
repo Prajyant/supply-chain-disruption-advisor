@@ -24,4 +24,53 @@
   .input {
     @apply bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500;
   }
+
+  /* ==================== Phase 3: NodeDetail Panel ==================== */
+
+  .node-detail-panel {
+    @apply bg-slate-900 border border-slate-800 rounded-lg h-full flex flex-col overflow-hidden;
+    border-left-width: 4px;
+  }
+
+  /* ==================== Phase 3: Shipment Cards ==================== */
+
+  .shipment-card {
+    @apply bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 transition-all;
+  }
+
+  .shipment-card:hover {
+    @apply bg-slate-800/80 border-slate-600/50;
+  }
+
+  /* ==================== Phase 3: Status Badges ==================== */
+
+  .status-badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium;
+  }
+
+  /* ==================== Phase 3: ETA Progress Bar ==================== */
+
+  .eta-progress {
+    @apply w-full h-1.5 bg-slate-700 rounded-full overflow-hidden;
+  }
+
+  .eta-progress-bar {
+    @apply h-full bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full;
+    transition: width 0.8s ease-out;
+  }
+
+  /* ==================== Phase 3: Risk Timeline ==================== */
+
+  .risk-timeline {
+    @apply space-y-3;
+  }
+
+  .risk-timeline-item {
+    @apply flex items-start;
+  }
+
+  .risk-timeline-dot {
+    @apply w-2 h-2 rounded-full mt-1.5 shrink-0;
+    background: currentColor;
+  }
 }

@@ -11,3 +11,11 @@ free-claude-code/
 mcp/
 CLAUDE.md
 
+
+# Generated Data and Models
+models/
+data/shipment_*.csv
+data/supplier_shipments.csv
+
+# Scratch files
+*.html

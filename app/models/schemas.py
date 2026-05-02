@@ -176,3 +176,191 @@ class IngestionCompleteEvent(BaseModel):
     """Event for ingestion completion notification."""
     type: str = "ingestion_complete"
     data: dict[str, Any]
+
+
+# ==================== SHIPMENT SCHEMAS ====================
+
+
+class ShipmentInput(BaseModel):
+    """Input data for shipment risk analysis."""
+    shipment_id: str
+    supplier: str
+    origin: str
+    destination: str
+    route_nodes: list[str] = Field(default_factory=list)
+    imo_number: Optional[str] = None
+    mmsi: Optional[str] = None
+    vessel_name: Optional[str] = None
+    vessel_latitude: Optional[float] = None
+    vessel_longitude: Optional[float] = None
+    vessel_status: Optional[str] = None
+    vessel_speed_knots: Optional[float] = None
+    vessel_course_degrees: Optional[float] = None
+    vessel_progress_percent: Optional[float] = None
+    flight_callsign: Optional[str] = None
+    flight_icao24: Optional[str] = None
+    flight_altitude_m: Optional[float] = None
+    transport_mode: str = "sea"
+    material: str
+    quantity: float
+    lead_time_days: float
+    inventory_days_cover: float
+    supplier_delay_count: int = 0
+    priority: str | int = "normal"
+    declared_value_usd: float = 0.0
+    departure_date: Optional[str] = None
+    eta_date: Optional[str] = None
+    target_delivery_date: Optional[str] = None
+
+
+class ShipmentRiskRequest(BaseModel):
+    """Request for shipment risk scoring."""
+    shipment: ShipmentInput
+    intelligence_events: list[dict[str, Any]] = Field(default_factory=list)
+    use_live_intelligence: bool = True
+
+
+class ShipmentRiskResponse(BaseModel):
+    """Response for shipment risk scoring."""
+    shipment_id: str
+    risk_score: float
+    risk_level: str
+    scoring_method: str
+    model_version: str
+    features: dict[str, float]
+    signals: list[str]
+    evidence_events: list[dict[str, Any]]
+    context_events: list[dict[str, Any]]
+
+
+class ShipmentRiskAdviceRequest(BaseModel):
+    """Request for shipment risk advice."""
+    shipment: ShipmentInput
+    intelligence_events: list[dict[str, Any]] = Field(default_factory=list)
+    use_live_intelligence: bool = True
+    question: Optional[str] = None
+
+
+class ShipmentRiskAdviceResponse(BaseModel):
+    """Response for shipment risk advice."""
+    shipment_id: str
+    risk_score: float
+    risk_level: str
+    decision: str
+    reason: str
+    recommended_actions: list[str]
+    confidence_score: int
+    escalation_required: bool
+    scoring_method: str
+    reasoning_method: str
+    model_version: str
+    signals: list[str]
+    features: dict[str, float]
+    evidence_events: list[dict[str, Any]]
+    context_events: list[dict[str, Any]]
+    event_explanations: list[dict[str, Any]]
+
+
+class StrandsShipmentRiskRequest(BaseModel):
+    """Request for Strands-orchestrated shipment risk analysis."""
+    shipment: ShipmentInput
+    intelligence_events: list[dict[str, Any]] = Field(default_factory=list)
+    use_live_intelligence: bool = True
+    prefer_strands_sdk: bool = True
+    question: Optional[str] = None
+
+
+class StrandsShipmentRiskResponse(BaseModel):
+    """Response for Strands-orchestrated shipment risk analysis."""
+    agent: str
+    strands_sdk_available: bool
+    orchestration_method: str
+    steps: list[str]
+    result: ShipmentRiskAdviceResponse
+
+
+# ==================== PHASE 3: NODE CONTEXT SCHEMAS ====================
+
+
+class ShipmentSummary(BaseModel):
+    """Compact shipment card for node context."""
+    shipment_id: str
+    supplier: str
+    material: str
+    status: str  # "in_transit", "delivered", "rerouted", "cancelled", "delayed"
+    eta_days: int
+    origin: str
+    destination: str = ""
+    tracking_number: str = ""
+    departure_date: str = ""
+    last_updated: str = ""
+
+
+class OrderSummary(BaseModel):
+    """Pending order card for node context."""
+    order_id: str
+    supplier: str
+    material: str
+    quantity: float
+    status: str  # "pending", "in_production", "shipped", "fulfilled"
+    expected_date: str = ""
+    stock_coverage_days: Optional[int] = None
+
+
+class RiskHistoryEntry(BaseModel):
+    """Past risk event for node context timeline."""
+    risk_id: str
+    severity: str
+    disruption_type: str
+    detected_at: datetime
+    summary: str
+    source: str = ""
+
+
+class NewsArticleSummary(BaseModel):
+    """Linked news article for node context."""
+    news_id: str
+    headline: str
+    region: str
+    date: str
+    relevance_score: float = 0.0
+
+
+class NodeContextSummary(BaseModel):
+    """Lightweight context summary cached per node for the graph view."""
+    shipment_count: int = 0
+    order_count: int = 0
+    risk_count: int = 0
+    has_critical_risk: bool = False
+
+
+class NodeContext(BaseModel):
+    """Complete knowledge card for a Digital Twin node."""
+    id: str
+    type: str
+    name: str
+    location: str
+    risk_score: float
+    direct_risk: float
+    derived_risk: float
+    status: str
+    criticality: str
+    financial_exposure_usd: Optional[float] = None
+    days_buffer: Optional[int] = None
+    active_shipments: list[ShipmentSummary] = Field(default_factory=list)
+    pending_orders: list[OrderSummary] = Field(default_factory=list)
+    risk_history: list[RiskHistoryEntry] = Field(default_factory=list)
+    connected_news: list[NewsArticleSummary] = Field(default_factory=list)
+    upstream_nodes: list[Node] = Field(default_factory=list)
+    downstream_nodes: list[Node] = Field(default_factory=list)
+    context_summary: NodeContextSummary = Field(default_factory=NodeContextSummary)
+
+
+class ShipmentUpdateResult(BaseModel):
+    """Result of processing a shipment status update."""
+    shipment_id: str
+    supplier: str
+    old_status: str
+    new_status: str
+    node_id: Optional[str] = None
+    risk_score_change: Optional[float] = None
