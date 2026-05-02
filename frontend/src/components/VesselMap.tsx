@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { MapContainer, Marker, Popup, TileLayer, Polyline, CircleMarker } from 'react-leaflet';
+import { useEffect, useState } from 'react';
+import { MapContainer, Marker, Popup, TileLayer, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getFlightByCallsign, getFlightStatus, type FlightData } from '../services/flightTracker';
+import { RouteLines } from './RouteLines';
+import { FitViewport } from './FitViewport';
+import { WeatherOverlay } from './WeatherOverlay';
 
 // Fix for default marker icons in Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -155,7 +158,6 @@ export function VesselMap({
   progress,
   transportMode = 'sea',
 }: VesselMapProps) {
-  const mapRef = useRef<L.Map>(null);
   const [flightData, setFlightData] = useState<FlightData | null>(null);
   const [isRealtime, setIsRealtime] = useState(false);
 
@@ -166,16 +168,6 @@ export function VesselMap({
   // Default coordinates if vessel position is not available
   const vesselLat = latitude ?? 20;
   const vesselLon = longitude ?? 0;
-
-  // Simple route coordinates (straight line for demo)
-  const routePositions: [number, number][] = [];
-  if (originCoords && destCoords) {
-    routePositions.push(originCoords);
-    routePositions.push(destCoords);
-  } else if (latitude && longitude) {
-    // If no route, just show vessel position
-    routePositions.push([latitude, longitude]);
-  }
 
   // Fetch realtime flight data for air shipments
   useEffect(() => {
@@ -199,17 +191,6 @@ export function VesselMap({
       return () => clearInterval(interval);
     }
   }, [transportMode, vesselName]);
-
-  // Update map view when position changes
-  useEffect(() => {
-    if (mapRef.current) {
-      const currentLat = flightData?.latitude ?? latitude;
-      const currentLon = flightData?.longitude ?? longitude;
-      if (typeof currentLat === 'number' && typeof currentLon === 'number') {
-        mapRef.current.setView([currentLat, currentLon], 5);
-      }
-    }
-  }, [latitude, longitude, flightData]);
 
   if (typeof latitude !== 'number' && !flightData) {
     return (
@@ -255,7 +236,6 @@ export function VesselMap({
 
       <div className="h-64 overflow-hidden rounded-lg border border-slate-800">
         <MapContainer
-          ref={mapRef}
           center={[currentLat, currentLon]}
           zoom={5}
           style={{ height: '100%', width: '100%', background: '#0f172a' }}
@@ -266,27 +246,39 @@ export function VesselMap({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           />
 
-          {/* Dotted route line */}
-          {routePositions.length > 1 && (
-            <>
-              <Polyline
-                positions={routePositions}
-                color={statusColor}
-                weight={3}
-                opacity={0.8}
-                dashArray="8, 12"
-                lineCap="round"
-              />
-              {/* Add a second, thinner line for visual effect */}
-              <Polyline
-                positions={routePositions}
-                color={statusColor}
-                weight={1}
-                opacity={0.4}
-                dashArray="4, 8"
-              />
-            </>
-          )}
+          {/* Route lines via sub-component */}
+          <RouteLines
+            origin={originCoords}
+            vessel={
+              typeof currentLat === 'number' && typeof currentLon === 'number'
+                ? [currentLat, currentLon]
+                : undefined
+            }
+            destination={destCoords}
+            status={currentStatus}
+          />
+
+          {/* Fit viewport to all visible points */}
+          <FitViewport
+            origin={originCoords}
+            vessel={
+              typeof currentLat === 'number' && typeof currentLon === 'number'
+                ? [currentLat, currentLon]
+                : undefined
+            }
+            destination={destCoords}
+          />
+
+          {/* Weather overlay for route: origin, vessel position, and destination */}
+          <WeatherOverlay
+            points={[
+              originCoords,
+              typeof currentLat === 'number' && typeof currentLon === 'number'
+                ? [currentLat, currentLon] as [number, number]
+                : undefined,
+              destCoords,
+            ].filter(Boolean) as [number, number][]}
+          />
 
           {/* Current position marker */}
           <Marker

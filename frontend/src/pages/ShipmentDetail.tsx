@@ -24,6 +24,8 @@ import { loadDemoShipments } from '../services/shipmentData';
 import { EvidenceEvent, ShipmentInput, StrandsShipmentRiskResponse } from '../types';
 import { VesselMap } from '../components/VesselMap';
 import { DebugPanel } from '../components/DebugPanel';
+import { LiveWeatherBanner } from '../components/LiveWeatherBanner';
+import { getPositionWeather, type PositionWeatherData } from '../services/weatherService';
 
 type StrandsStatus = {
   agent: string;
@@ -85,6 +87,13 @@ export function ShipmentDetail() {
     retry: 0,
   });
 
+  const positionWeatherQuery = useQuery({
+    queryKey: ['position-weather', shipment?.vessel_latitude, shipment?.vessel_longitude],
+    queryFn: () => getPositionWeather(shipment!.vessel_latitude!, shipment!.vessel_longitude!),
+    enabled: typeof shipment?.vessel_latitude === 'number' && typeof shipment?.vessel_longitude === 'number',
+    staleTime: 3 * 60 * 1000,
+  });
+
   if (shipmentsQuery.isLoading) {
     return <PageLoading label="Loading shipment record" />;
   }
@@ -111,14 +120,55 @@ export function ShipmentDetail() {
   const analysis = analysisQuery.data;
   const evidenceEvents = analysis?.result.evidence_events ?? [];
   const contextEvents = analysis?.result.context_events ?? [];
-  const weatherEvents = evidenceEvents.filter((event) => isEventSource(event, ['weather', 'marine']));
+  const isAir = shipment.transport_mode === 'air';
+  const isGround = shipment.transport_mode === 'ground';
+
+  const weatherEvents = evidenceEvents.filter((event) => {
+    const isMarine = isEventSource(event, ['marine']);
+    if (isGround && isMarine) return false;
+    return isEventSource(event, ['weather', 'marine']);
+  });
   const worldEvents = evidenceEvents.filter((event) => isEventSource(event, ['trade', 'news']));
-  const weatherContextEvents = contextEvents.filter((event) => isEventSource(event, ['weather', 'marine']));
-  const worldContextEvents = contextEvents.filter((event) => isEventSource(event, ['trade', 'news']));
+
+  // For the Live Context panel, combine evidence + context events so it's never empty
+  // Filter weather events to only show route-relevant ones
+  const routeTerms = [
+    shipment.origin,
+    shipment.destination,
+    ...(shipment.route_nodes || []),
+  ]
+    .filter(Boolean)
+    .map((s) => s.toLowerCase());
+
+  const allLiveEvents = [...evidenceEvents, ...contextEvents];
+  const seenTitles = new Set<string>();
+  const dedupedLiveEvents = allLiveEvents.filter((event) => {
+    const key = event.title;
+    if (seenTitles.has(key)) return false;
+    seenTitles.add(key);
+    if (!isEventSource(event, ['weather', 'marine', 'trade', 'news'])) return false;
+
+    // For weather events, only include if location matches the route
+    if (isEventSource(event, ['weather', 'marine'])) {
+      const titleLower = event.title.toLowerCase();
+      const location = (event.metadata?.location || '').toLowerCase();
+      return routeTerms.some(
+        (term) => titleLower.includes(term) || location.includes(term) || term.includes(location)
+      );
+    }
+    return true; // news/trade events always included
+  });
+  const liveWeatherContextEvents = dedupedLiveEvents.filter((event) => {
+    const isMarine = isEventSource(event, ['marine']);
+    if (isGround && isMarine) return false;
+    return isEventSource(event, ['weather', 'marine']);
+  });
+  const liveWorldContextEvents = dedupedLiveEvents.filter((event) => isEventSource(event, ['trade', 'news']));
+  
   const vesselEvents = evidenceEvents.filter((event) => isEventSource(event, ['vessel']));
   const flightEvents = evidenceEvents.filter((event) => isEventSource(event, ['flight']));
-  const isAir = shipment.transport_mode === 'air';
   const telemetryEvents = isAir ? flightEvents : vesselEvents;
+
   const processorSteps = buildProcessorSteps(
     shipment,
     analysis,
@@ -177,13 +227,24 @@ export function ShipmentDetail() {
         </div>
       </section>
 
+      {/* Live weather + marine conditions at vessel position */}
+      {!isGround && (
+        <LiveWeatherBanner
+          latitude={shipment.vessel_latitude}
+          longitude={shipment.vessel_longitude}
+          vesselName={shipment.vessel_name ?? undefined}
+          transportMode={shipment.transport_mode}
+        />
+      )}
+
       {analysis ? (
         <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
           <div className="min-w-0 space-y-5">
             <CompactRiskSummary result={analysis} />
-            <KeyRiskDrivers result={analysis} />
+            <KeyRiskDrivers result={analysis} positionWeather={positionWeatherQuery.data ?? undefined} />
           </div>
 
+          {!isGround && (
           <section className="card min-w-0 space-y-4 overflow-hidden">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -212,6 +273,7 @@ export function ShipmentDetail() {
               transportMode={shipment.transport_mode}
             />
           </section>
+          )}
         </div>
       ) : analysisQuery.isLoading ? (
         <PageLoading label="Running shipment analysis" compact />
@@ -244,8 +306,8 @@ export function ShipmentDetail() {
           contextContent={
             <LiveContextDebugContent
               shipment={shipment}
-              weatherContextEvents={weatherContextEvents}
-              worldContextEvents={worldContextEvents}
+              weatherContextEvents={liveWeatherContextEvents}
+              worldContextEvents={liveWorldContextEvents}
             />
           }
         />
@@ -430,15 +492,42 @@ function LiveContextDebugContent({
         <h4 className="mb-3 text-sm font-semibold text-white">Live Weather & News</h4>
         {liveEvents.length > 0 ? (
           <div className="space-y-2">
-            {liveEvents.slice(0, 8).map((event, index) => (
-              <div key={`${event.title}-${index}`} className="text-xs text-slate-300">
-                <span className={`mr-1 rounded px-1.5 py-0.5 font-medium ${severityClass(event.severity)}`}>
-                  {event.severity}
-                </span>
-                {' '}
-                {event.title}
-              </div>
-            ))}
+            {liveEvents.slice(0, 8).map((event, index) => {
+              const eventLink = getEventLink(event);
+              const isNews = isEventSource(event, ['news', 'trade']);
+              return (
+                <div key={`${event.title}-${index}`} className="flex items-start gap-2 text-xs">
+                  <span className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-medium ${severityClass(event.severity)}`}>
+                    {event.severity}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    {eventLink ? (
+                      <a
+                        href={eventLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-200 underline decoration-cyan-400/30 hover:text-cyan-100 hover:decoration-cyan-400/60 transition-colors"
+                      >
+                        {event.title}
+                        <ExternalLink className="ml-1 inline h-3 w-3" />
+                      </a>
+                    ) : isNews && event.metadata?.link ? (
+                      <a
+                        href={String(event.metadata.link)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-cyan-200 underline decoration-cyan-400/30 hover:text-cyan-100 hover:decoration-cyan-400/60 transition-colors"
+                      >
+                        {event.title}
+                        <ExternalLink className="ml-1 inline h-3 w-3" />
+                      </a>
+                    ) : (
+                      <span className="text-slate-300">{event.title}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <p className="text-sm text-slate-500">No non-scoring context events were returned for this shipment.</p>
@@ -463,20 +552,13 @@ function buildProcessorSteps(
   const hasNewsContext = contextEvents.some((event) => isEventSource(event, ['news', 'trade']));
   const toolSteps = result?.steps ?? [];
 
-  return [
+  const steps: ProcessorStep[] = [
     {
       id: 'csv',
       label: 'Supplier CSV',
       detail: `${shipment.inventory_days_cover} inventory days, priority ${formatPriority(shipment.priority)}, ${shipment.lead_time_days} day lead time`,
       status: 'complete',
       icon: FileText,
-    },
-    {
-      id: 'vessel',
-      label: 'Vessel Tracker',
-      detail: shipment.vessel_name ? `${shipment.vessel_name} at ${formatCoordinates(shipment.vessel_latitude, shipment.vessel_longitude)}` : 'No vessel telemetry attached',
-      status: status(Boolean(shipment.vessel_name || toolSteps.includes('track_vessel_by_imo'))),
-      icon: Ship,
     },
     {
       id: 'weather',
@@ -521,6 +603,18 @@ function buildProcessorSteps(
       icon: ShieldCheck,
     },
   ];
+
+  if (shipment.transport_mode !== 'ground') {
+    steps.splice(1, 0, {
+      id: 'vessel',
+      label: 'Vessel Tracker',
+      detail: shipment.vessel_name ? `${shipment.vessel_name} at ${formatCoordinates(shipment.vessel_latitude, shipment.vessel_longitude)}` : 'No vessel telemetry attached',
+      status: status(Boolean(shipment.vessel_name || toolSteps.includes('track_vessel_by_imo'))),
+      icon: Ship,
+    });
+  }
+
+  return steps;
 }
 
 function PageLoading({ label, compact = false }: { label: string; compact?: boolean }) {
@@ -850,13 +944,34 @@ function ActionCard({ action, index }: { action: string; index: number }) {
   );
 }
 
-function KeyRiskDrivers({ result }: { result: StrandsShipmentRiskResponse }) {
+function KeyRiskDrivers({ result, positionWeather }: { result: StrandsShipmentRiskResponse; positionWeather?: PositionWeatherData }) {
   const topDrivers = Object.entries(result.result.features)
     .filter(([, value]) => value > 0)
     .sort((left, right) => right[1] - left[1])
     .slice(0, 5);
 
   const evidenceEvents = result.result.evidence_events ?? [];
+
+  // Build live condition cards from position weather when severity >= medium
+  const liveConditions: { type: string; severity: string; title: string; detail: string }[] = [];
+  if (positionWeather?.weather && positionWeather.weather.severity !== 'low') {
+    const w = positionWeather.weather;
+    liveConditions.push({
+      type: 'weather',
+      severity: w.severity,
+      title: `${w.weather_description} at vessel position`,
+      detail: `Wind ${w.wind_speed_kmh.toFixed(0)} km/h, gusts ${w.wind_gusts_kmh.toFixed(0)} km/h, rain ${w.precipitation_mm.toFixed(1)} mm`,
+    });
+  }
+  if (positionWeather?.marine && positionWeather.marine.severity !== 'low') {
+    const m = positionWeather.marine;
+    liveConditions.push({
+      type: 'marine',
+      severity: m.severity,
+      title: `Rough sea conditions at vessel position`,
+      detail: `Waves ${m.wave_height_m.toFixed(1)} m, swell ${m.swell_wave_height_m.toFixed(1)} m, current ${m.ocean_current_velocity_kmh.toFixed(1)} km/h`,
+    });
+  }
 
   return (
     <section className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl shadow-slate-950/30">
@@ -918,6 +1033,42 @@ function KeyRiskDrivers({ result }: { result: StrandsShipmentRiskResponse }) {
           );
         })}
       </div>
+
+      {/* Live weather/marine conditions (medium+ severity) */}
+      {liveConditions.length > 0 && (
+        <div className="mt-4">
+          <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
+            <CloudSun className="h-3.5 w-3.5" />
+            <span className="uppercase tracking-wide">Live conditions at vessel position</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {liveConditions.map((cond) => {
+              const condLevel = driverLevel(cond.severity === 'critical' ? 9 : cond.severity === 'high' ? 7 : 5);
+              return (
+                <article key={cond.type} className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 p-4 transition-colors hover:border-slate-700">
+                  <div className={`absolute inset-y-0 left-0 w-1 ${condLevel.bar}`} />
+                  <div className="flex items-start justify-between gap-3 pl-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="text-sm font-medium text-white">{cond.title}</span>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold uppercase ${condLevel.badge}`}>
+                          {cond.severity}
+                        </span>
+                      </div>
+                      <p className="text-sm leading-6 text-slate-300">{cond.detail}</p>
+                      <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-400/5 px-2 py-0.5 text-[10px] text-cyan-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                        Live data
+                      </span>
+                    </div>
+                    <div className={`mt-1 h-3 w-3 shrink-0 rounded-full ${condLevel.dot}`} />
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

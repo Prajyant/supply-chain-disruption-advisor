@@ -75,7 +75,9 @@ class IngestionWorker(BackgroundWorker):
         logger.info("Running ingestion worker...")
 
         try:
-            result = self.ingestion_service.ingest(
+            # Run blocking ingestion in a thread to avoid stalling the event loop
+            result = await asyncio.to_thread(
+                self.ingestion_service.ingest,
                 supplier_emails_path="data/supplier_emails.csv",
                 news_feed_path="data/news_feed.csv",
                 inventory_path="data/inventory.csv",
@@ -83,6 +85,15 @@ class IngestionWorker(BackgroundWorker):
             )
 
             logger.info(f"Ingestion complete: {result}")
+
+            # Populate the ShipmentTracker from email events
+            events = result.get("events", [])
+            email_events = [
+                e for e in events
+                if e.get("source") in ("supplier_email", "live_email", "inventory")
+            ]
+            if email_events:
+                await self._populate_shipment_tracker(email_events)
 
             # Broadcast completion
             await manager.broadcast_ingestion_complete(
@@ -92,6 +103,25 @@ class IngestionWorker(BackgroundWorker):
         except Exception as e:
             logger.error(f"Ingestion failed: {e}")
 
+    async def _populate_shipment_tracker(self, email_events: list) -> None:
+        """Populate the ShipmentTracker singleton from ingested email events."""
+        try:
+            from app.services.shipment_tracker import ShipmentTracker
+            tracker = ShipmentTracker()
+            created = await tracker.ingest_shipments(email_events)
+
+            # Also load status updates CSV
+            update_events = tracker.load_shipment_updates_csv()
+            if update_events:
+                await tracker.ingest_shipments(update_events)
+                await tracker.process_status_updates(update_events)
+
+            logger.info(f"Background worker populated ShipmentTracker with {created} shipments")
+        except Exception as e:
+            logger.error(f"ShipmentTracker population failed: {e}")
+
+
+from app.ingestion.worldmonitor import fetch_realtime_news
 
 class RiskWorker(BackgroundWorker):
     """Worker for periodic risk analysis."""
@@ -109,10 +139,18 @@ class RiskWorker(BackgroundWorker):
         logger.info("Running risk worker...")
 
         try:
-            # Re-analyze existing risks
-            risks = self.risk_service.get_risks()
-            logger.info(f"Re-analyzed {len(risks)} risks")
-
+            # Fetch fresh news in a thread (blocking RSS/Weather calls)
+            news = await asyncio.to_thread(fetch_realtime_news)
+            
+            cached_ops = self.risk_service.get_predictions()  # Use the proper getter
+            if cached_ops:
+                # Re-evaluate in a thread (potential heavy LLM or regex logic)
+                await asyncio.to_thread(
+                    self.risk_service.cross_reference,
+                    [p.metadata if hasattr(p, 'metadata') else p.get('metadata', {}) for p in cached_ops], 
+                    news
+                )
+            
             # Broadcast updates for critical risks
             for risk in self.risk_service.get_critical_risks():
                 await manager.broadcast_risk_update(

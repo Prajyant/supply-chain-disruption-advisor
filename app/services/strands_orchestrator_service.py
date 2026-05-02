@@ -27,13 +27,8 @@ logger = logging.getLogger(__name__)
 class StrandsOrchestratorService:
     """Run the supply-chain risk workflow through Strands tools when possible."""
 
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._agent = None
-        return cls._instance
+    def __init__(self) -> None:
+        self._agent = None
 
     def run_shipment_risk_workflow(
         self,

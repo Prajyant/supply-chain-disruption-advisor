@@ -24,16 +24,11 @@ except Exception:
 class GeminiAdviceService:
     """Convert quantitative shipment scores into validated advice JSON."""
 
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._client = None
-            cls._instance._model = None
-            cls._instance._last_error = None
-            cls._instance._init_client()
-        return cls._instance
+    def __init__(self) -> None:
+        self._client = None
+        self._model = None
+        self._last_error = None
+        self._init_client()
 
     def _init_client(self) -> None:
         settings = get_settings()
@@ -81,7 +76,9 @@ class GeminiAdviceService:
         question: str | None,
     ) -> ShipmentRiskAdviceResponse | None:
         self._last_error = None
-        prompt = build_advice_prompt(shipment, compact_score_result_for_prompt(score_result), question)
+        shipment_data = compact_shipment_for_prompt(shipment)
+        score_data = compact_score_result_for_prompt(score_result)
+        prompt = build_advice_prompt(shipment_data, score_data, question)
 
         try:
             config = None
@@ -91,7 +88,7 @@ class GeminiAdviceService:
                     temperature=0.1,
                     max_output_tokens=4096,
                     thinking_config=genai_types.ThinkingConfig(
-                        thinking_budget=128,
+                        thinking_budget=512,
                         include_thoughts=False,
                     ),
                 )
@@ -190,7 +187,7 @@ Supply Chain Risk Context:
 - These external factors compound existing shipment pressures like low inventory, long lead times, and supplier delays, turning manageable risks into critical disruptions.
 
 Shipment:
-{shipment.model_dump_json(indent=2)}
+{json.dumps(compact_shipment_for_prompt(shipment), indent=2)}
 
 Quantitative score result:
 {json.dumps(score_result, indent=2)}
@@ -234,16 +231,34 @@ Guardrails:
 
 def compact_score_result_for_prompt(score_result: dict[str, Any]) -> dict[str, Any]:
     """Keep Gemini prompts focused while preserving all guarded model facts."""
-    return {
+    compacted = {
         "shipment_id": score_result.get("shipment_id"),
         "risk_score": score_result.get("risk_score"),
         "risk_level": score_result.get("risk_level"),
         "scoring_method": score_result.get("scoring_method"),
         "model_version": score_result.get("model_version"),
-        "features": score_result.get("features", {}),
+        "features": {k: v for k, v in score_result.get("features", {}).items() if v != 0.0},
         "signals": score_result.get("signals", [])[:8],
-        "evidence_events": compact_events(score_result.get("evidence_events", [])),
-        "context_events": compact_events(score_result.get("context_events", []), limit=6),
+    }
+
+    evidence = compact_events(score_result.get("evidence_events", []))
+    if evidence:
+        compacted["evidence_events"] = evidence
+
+    context = compact_events(score_result.get("context_events", []), limit=6)
+    if context:
+        compacted["context_events"] = context
+
+    return compacted
+
+
+def compact_shipment_for_prompt(shipment) -> dict:
+    """Filter out nulls, empty lists, and zeros to save prompt tokens."""
+    data = shipment.model_dump() if hasattr(shipment, 'model_dump') else dict(shipment)
+    return {
+        k: v for k, v in data.items()
+        if v is not None and v != [] and v != 0.0
+        and k not in {'mmsi', 'flight_icao24', 'vessel_course_degrees'}
     }
 
 
