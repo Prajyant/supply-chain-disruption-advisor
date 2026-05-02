@@ -47,6 +47,11 @@ export default defineConfig({
       '/node/': {
         target: 'http://localhost:8000',
         changeOrigin: true,
+        rewrite: (path: string) => path,
+      },
+      '/weather': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
       },
       '/graph': {
         target: 'http://localhost:8000',

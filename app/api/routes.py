@@ -383,6 +383,62 @@ def propagate_risk(graph_service: GraphService = Depends(get_graph_service)) -> 
     return graph_service.propagate_risk()
 
 
+@router.post("/graph/score-nodes")
+def score_graph_nodes(graph_service: GraphService = Depends(get_graph_service)) -> dict:
+    """Score all graph nodes using live weather/trade/news intelligence.
+
+    Fetches current intelligence and maps risk to each node based on
+    its location matching weather events, trade signals, and news.
+    """
+    from app.ingestion.weather_monitor import fetch_weather_events
+    from app.ingestion.trade_monitor import fetch_trade_policy_events
+    from app.ingestion.worldmonitor import fetch_supply_chain_news, normalize_news_event
+
+    severity_map = {"critical": 0.9, "high": 0.7, "medium": 0.5, "low": 0.2}
+    updated = 0
+
+    # Fetch live intelligence
+    weather_events = fetch_weather_events(limit=20)
+    trade_events = fetch_trade_policy_events(limit=15)
+
+    # Score nodes by matching weather events to node locations
+    for node in graph_service.graph.nodes.values():
+        node_name = node.name.lower()
+        node_location = node.location.lower()
+        max_risk = node.direct_risk  # preserve existing risk
+
+        # Match weather events
+        for event in weather_events:
+            meta = event.get("metadata", {})
+            event_location = str(meta.get("location", "")).lower()
+            if event_location and (event_location in node_name or event_location in node_location or node_name in event_location):
+                severity = meta.get("severity", "low")
+                risk = severity_map.get(severity, 0.2)
+                max_risk = max(max_risk, risk)
+
+        # Match trade events
+        for event in trade_events:
+            text = event.get("text", "").lower()
+            meta = event.get("metadata", {})
+            severity = meta.get("severity", "low")
+            if node_name in text or node_location in text:
+                risk = severity_map.get(severity, 0.2)
+                max_risk = max(max_risk, risk)
+
+        if max_risk > node.direct_risk:
+            node.direct_risk = max_risk
+            updated += 1
+
+    # Propagate after scoring
+    prop_result = graph_service.propagate_risk()
+
+    return {
+        "scored_nodes": updated,
+        "propagation": prop_result,
+        "total_nodes": len(graph_service.graph.nodes),
+    }
+
+
 # ==================== NODE CONTEXT ENDPOINTS (Phase 3) ====================
 
 
@@ -495,8 +551,6 @@ def submit_playbook_feedback(
     ctx = ContextSnapshot(
         node_id=execution.node_id,
         risk_score=0.0,
-        severity=execution.severity,
-        disruption_type=execution.disruption_type,
     )
 
     result = advisor_service.feedback_service.record_feedback(
@@ -511,7 +565,7 @@ def submit_playbook_feedback(
     if not result:
         raise HTTPException(status_code=409, detail="Feedback already exists for this execution")
 
-    return {"status": "ok", "feedback_id": result.id}
+    return {"status": "ok", "feedback_id": result.feedback_id}
 
 
 class SimulatePlaybookRequest(BaseModel):

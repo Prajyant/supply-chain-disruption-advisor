@@ -81,10 +81,11 @@ export const riskApi = {
 
 export const networkApi = {
   getNetwork: () => api.get('/network'),
-  getNode: (id: string) => api.get(`/api/node/${id}`),
-  getNodeImpact: (id: string) => api.get(`/api/node/${id}/impact`),
-  getNodeContext: (id: string) => api.get(`/api/node/${id}/context`),
+  getNode: (id: string) => api.get(`/node/${id}`),
+  getNodeImpact: (id: string) => api.get(`/node/${id}/impact`),
+  getNodeContext: (id: string) => api.get(`/node/${id}/context`),
   propagateRisk: () => api.post('/graph/propagate'),
+  scoreNodes: () => api.post('/graph/score-nodes'),
 };
 
 // ==================== Chat API ====================

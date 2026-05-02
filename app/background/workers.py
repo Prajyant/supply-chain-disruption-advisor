@@ -66,9 +66,11 @@ class IngestionWorker(BackgroundWorker):
         self,
         interval_seconds: int = 900,  # 15 minutes
         ingestion_service: Optional[IngestionService] = None,
+        graph_service: Optional[GraphService] = None,
     ) -> None:
         super().__init__(interval_seconds)
         self.ingestion_service = ingestion_service or IngestionService()
+        self.graph_service = graph_service
 
     async def run(self) -> None:
         """Run the ingestion worker."""
@@ -92,8 +94,16 @@ class IngestionWorker(BackgroundWorker):
                 e for e in events
                 if e.get("source") in ("supplier_email", "live_email", "inventory")
             ]
+            news_events = [
+                e for e in events
+                if e.get("source") not in ("supplier_email", "live_email", "inventory")
+            ]
+
             if email_events:
                 await self._populate_shipment_tracker(email_events)
+
+            # Run risk analysis and map to Digital Twin graph
+            await self._analyze_and_map_risks(email_events, news_events)
 
             # Broadcast completion
             await manager.broadcast_ingestion_complete(
@@ -119,6 +129,55 @@ class IngestionWorker(BackgroundWorker):
             logger.info(f"Background worker populated ShipmentTracker with {created} shipments")
         except Exception as e:
             logger.error(f"ShipmentTracker population failed: {e}")
+
+    async def _analyze_and_map_risks(self, email_events: list, news_events: list) -> None:
+        """Run risk analysis on events and map results to the Digital Twin graph."""
+        if not self.graph_service:
+            logger.warning("No GraphService available for risk mapping")
+            return
+        try:
+            graph_service = self.graph_service
+
+            # Score graph nodes using live weather/trade intelligence
+            from app.ingestion.weather_monitor import fetch_weather_events
+            from app.ingestion.trade_monitor import fetch_trade_policy_events
+
+            severity_map = {"critical": 0.9, "high": 0.7, "medium": 0.5, "low": 0.2}
+            weather_events = await asyncio.to_thread(fetch_weather_events, 20)
+            trade_events = await asyncio.to_thread(fetch_trade_policy_events, 15)
+
+            scored = 0
+            for node in graph_service.graph.nodes.values():
+                node_name = node.name.lower()
+                node_location = node.location.lower()
+                max_risk = node.direct_risk
+
+                for event in weather_events:
+                    meta = event.get("metadata", {})
+                    event_loc = str(meta.get("location", "")).lower()
+                    if event_loc and (event_loc in node_name or event_loc in node_location or node_name in event_loc):
+                        risk = severity_map.get(meta.get("severity", "low"), 0.2)
+                        max_risk = max(max_risk, risk)
+
+                for event in trade_events:
+                    text = event.get("text", "").lower()
+                    meta = event.get("metadata", {})
+                    if node_name in text or node_location in text:
+                        risk = severity_map.get(meta.get("severity", "low"), 0.2)
+                        max_risk = max(max_risk, risk)
+
+                if max_risk > node.direct_risk:
+                    node.direct_risk = max_risk
+                    scored += 1
+
+            # Propagate risk through the graph
+            prop_result = graph_service.propagate_risk()
+            logger.info(
+                "Graph risk scoring: %d nodes scored, propagation updated %d nodes",
+                scored, len(prop_result.get("updated_nodes", [])),
+            )
+        except Exception as e:
+            logger.error(f"Risk analysis/mapping failed: {e}")
 
 
 from app.ingestion.worldmonitor import fetch_realtime_news

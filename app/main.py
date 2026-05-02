@@ -30,9 +30,19 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Starting background workers...")
-    worker_manager.register_worker("ingestion", IngestionWorker(interval_seconds=900))  # 15 min
-    worker_manager.register_worker("risk", RiskWorker(interval_seconds=1800))  # 30 min
-    worker_manager.register_worker("propagation", PropagationWorker(interval_seconds=60))  # 1 min
+    from app.api.routes import (
+        get_ingestion_service,
+        get_risk_service,
+        get_graph_service,
+    )
+
+    ingestion_svc = get_ingestion_service()
+    risk_svc = get_risk_service()
+    graph_svc = get_graph_service()
+
+    worker_manager.register_worker("ingestion", IngestionWorker(interval_seconds=900, ingestion_service=ingestion_svc, graph_service=graph_svc))  # 15 min
+    worker_manager.register_worker("risk", RiskWorker(interval_seconds=1800, risk_service=risk_svc))  # 30 min
+    worker_manager.register_worker("propagation", PropagationWorker(interval_seconds=60, graph_service=graph_svc))  # 1 min
     await worker_manager.start_all()
     logger.info("Background workers started")
 
