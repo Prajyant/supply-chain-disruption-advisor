@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { networkApi } from '../services/api';
-import { NodeContext, ShipmentSummary, ShipmentStatus } from '../types';
+import { NodeContext, ShipmentStatus } from '../types';
 import {
   X, Package, AlertTriangle, Newspaper, ShoppingCart,
   Truck, Clock, MapPin, ArrowUpRight, ArrowDownRight,
-  Shield, TrendingUp,
+  Shield,
 } from 'lucide-react';
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 

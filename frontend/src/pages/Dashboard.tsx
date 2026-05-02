@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { riskApi, shipmentApi } from '../services/api';
+import { ShipmentTracker } from '../components/ShipmentTracker';
 import { loadDemoShipments } from '../services/shipmentData';
 import { useRiskStore } from '../store/riskStore';
 import { RiskCard } from '../components/RiskCard';
@@ -164,6 +165,9 @@ export function Dashboard() {
           );
         })}
       </div>
+
+      {/* Phase 3: Shipment Tracker Widget */}
+      <ShipmentTracker />
 
       <section className="grid grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] gap-6">
         <div className="card">

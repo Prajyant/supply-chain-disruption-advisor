@@ -54,6 +54,7 @@ Access the app at http://localhost:3000
 
 **Backend:**
 ```bash
+python --version  # use Python 3.13
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 pip install -r requirements.txt

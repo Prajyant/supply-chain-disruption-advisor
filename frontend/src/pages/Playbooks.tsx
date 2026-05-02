@@ -196,7 +196,7 @@ export function Playbooks() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {playbooks.map((pb) => {
-                const catStyles = getCategoryStyles(pb.category);
+                const catStyles = getCategoryStyles(pb.category || 'other');
                 const Icon = catStyles.icon;
                 
                 return (
@@ -252,7 +252,7 @@ export function Playbooks() {
                           <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
                             {pb.trigger.disruption_type}
                           </span>
-                          <span className={`px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider font-semibold ${getSeverityColor(pb.trigger.min_severity)}`}>
+                          <span className={`px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider font-semibold ${getSeverityColor(pb.trigger.min_severity || 'medium')}`}>
                             ≥ {pb.trigger.min_severity}
                           </span>
                         </div>

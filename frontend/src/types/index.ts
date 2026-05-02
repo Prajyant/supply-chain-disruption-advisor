@@ -141,3 +141,97 @@ export interface StrandsShipmentRiskResponse {
   steps: string[];
   result: ShipmentRiskAdviceResponse;
 }
+
+// ==================== Phase 3 Types ====================
+
+export interface ContextSummary {
+  shipment_count: number;
+  order_count: number;
+  risk_count: number;
+  has_critical_risk: boolean;
+}
+
+export interface ShipmentSummary {
+  shipment_id: string;
+  supplier: string;
+  material: string;
+  status: ShipmentStatus;
+  eta_days: number;
+  origin: string;
+  destination: string;
+  tracking_number: string;
+  departure_date: string;
+  last_updated: string;
+}
+
+export type ShipmentStatus = 'in_transit' | 'delivered' | 'rerouted' | 'cancelled' | 'delayed';
+
+export interface NodeContext {
+  id: string;
+  type: string;
+  name: string;
+  location: string;
+  risk_score: number;
+  direct_risk: number;
+  derived_risk: number;
+  status: string;
+  criticality: string;
+  financial_exposure_usd: number | null;
+  days_buffer: number | null;
+  active_shipments: ShipmentSummary[];
+  pending_orders: any[];
+  risk_history: any[];
+  connected_news: any[];
+  upstream_nodes: any[];
+  downstream_nodes: any[];
+  context_summary: ContextSummary;
+}
+
+export interface Playbook {
+  id: string;
+  name: string;
+  description: string;
+  trigger_conditions: Record<string, any>;
+  trigger: {
+    severity_gte?: string;
+    min_severity?: string;
+    disruption_type?: string;
+    disruption_types?: string[];
+    requires_active_shipment?: boolean;
+    requires_low_buffer?: boolean;
+    buffer_threshold?: number;
+    [key: string]: any;
+  };
+  actions: any[];
+  enabled: boolean;
+  acceptance_rate: number;
+  total_executions: number;
+  times_triggered?: number;
+  category?: string;
+}
+
+export interface PlaybookExecution {
+  id: string;
+  execution_id: string;
+  playbook_id: string;
+  playbook_name: string;
+  node_id: string;
+  node_name: string;
+  severity: string;
+  disruption_type: string;
+  actions_taken: string[];
+  actions: {
+    description: string;
+    target: string;
+    urgency: string;
+    [key: string]: any;
+  }[];
+  status: string;
+  triggered_at: string;
+  feedback?: string;
+  is_simulation?: boolean;
+}
+
+export interface PlaybookWithStats extends Playbook {
+  recent_executions?: PlaybookExecution[];
+}

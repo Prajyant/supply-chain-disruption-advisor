@@ -5,6 +5,7 @@ import {
   MessageSquare,
   Settings,
   Package,
+  BookOpen,
 } from 'lucide-react';
 
 export function Layout() {
@@ -14,6 +15,7 @@ export function Layout() {
     { path: '/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/digital-twin', label: 'Digital Twin', icon: Network },
     { path: '/chat', label: 'Chat Advisor', icon: MessageSquare },
+    { path: '/playbooks', label: 'Playbooks', icon: BookOpen },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];
 

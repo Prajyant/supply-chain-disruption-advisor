@@ -1,8 +1,9 @@
 """API routes for the supply chain disruption advisor."""
-# Auth disabled - all endpoints are public (2026-05-01)
 import logging
 from typing import Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.models.schemas import (
     ChatRequest,
@@ -24,6 +25,8 @@ from app.services.shipment_risk_service import ShipmentRiskService
 from app.services.strands_orchestrator_service import StrandsOrchestratorService
 from app.ingestion.vessel_tracker import VesselTrackerClient
 from app.agents.supply_chain_agent import is_strands_available
+from app.auth.jwt_handler import JWTHandler
+from app.auth.rbac import authenticate_user
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -37,6 +40,69 @@ strands_orchestrator_service = StrandsOrchestratorService()
 
 # Load sample graph
 graph_service.load_sample_graph()
+
+security = HTTPBearer(auto_error=False)
+
+
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    """Validate JWT and return current user.
+
+    If no token is provided, returns a default admin user so the app
+    can operate without authentication during development.
+    """
+    if credentials is None:
+        return {"id": "1", "username": "admin", "role": "admin"}
+
+    payload = JWTHandler.verify_token(credentials.credentials, token_type="access")
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+    return {"id": payload.get("sub", ""), "username": payload.get("username", ""), "role": payload.get("role", "viewer")}
+
+
+# ==================== AUTH ENDPOINTS ====================
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@router.post("/auth/login")
+def login(req: LoginRequest) -> dict:
+    """Authenticate user and return JWT tokens."""
+    user = authenticate_user(req.username, req.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password",
+        )
+    token_data = {"sub": user["id"], "username": user["username"], "role": user["role"].value}
+    access_token = JWTHandler.create_access_token(token_data)
+    refresh_token = JWTHandler.create_refresh_token(token_data)
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": {"id": user["id"], "username": user["username"], "role": user["role"].value},
+    }
+
+
+@router.post("/auth/refresh")
+def refresh_token(refresh_token: str) -> dict:
+    """Refresh an access token using a valid refresh token."""
+    payload = JWTHandler.verify_token(refresh_token, token_type="refresh")
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+    token_data = {"sub": payload["sub"], "username": payload["username"], "role": payload["role"]}
+    new_access = JWTHandler.create_access_token(token_data)
+    return {"access_token": new_access}
 
 
 # ==================== INGESTION ENDPOINTS ====================
@@ -218,6 +284,149 @@ def propagate_risk() -> dict:
         Propagation results
     """
     return graph_service.propagate_risk()
+
+
+# ==================== NODE CONTEXT ENDPOINTS (Phase 3) ====================
+
+
+@router.get("/node/{node_id}/context")
+def get_node_context(node_id: str) -> dict:
+    """Get full enriched context ('knowledge card') for a node.
+
+    Called on node click — returns shipments, orders, risk history, news.
+
+    Args:
+        node_id: The node ID
+
+    Returns:
+        Full NodeContext dictionary
+
+    Raises:
+        HTTPException: If node not found
+    """
+    context = advisor_service.get_node_context(node_id)
+    if not context:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return context
+
+
+# ==================== SHIPMENT TRACKER ENDPOINTS (Phase 3) ====================
+
+
+@router.get("/shipments")
+def get_shipments() -> list[dict]:
+    """Get all tracked shipments.
+
+    Returns:
+        List of shipment dictionaries
+    """
+    return advisor_service.get_shipments()
+
+
+@router.get("/shipments/node/{node_id}")
+def get_shipments_for_node(node_id: str) -> list[dict]:
+    """Get all shipments for a specific node.
+
+    Args:
+        node_id: The node ID
+
+    Returns:
+        List of shipment dictionaries for this node
+    """
+    return advisor_service.get_shipments_for_node(node_id)
+
+
+# ==================== PLAYBOOK ENDPOINTS (Phase 3) ====================
+
+
+@router.get("/playbooks")
+def get_playbooks() -> dict:
+    """List all playbook definitions with acceptance rates."""
+    playbooks = advisor_service.playbook_engine.get_playbooks()
+    return {"playbooks": [pb.model_dump() for pb in playbooks]}
+
+
+@router.get("/playbooks/executions")
+def get_playbook_executions() -> dict:
+    """List all triggered playbook executions, most recent first."""
+    executions = advisor_service.playbook_engine.get_executions()
+    return {"executions": [e.model_dump() for e in executions]}
+
+
+@router.patch("/playbooks/{playbook_id}")
+async def toggle_playbook(playbook_id: str, enabled: bool = True) -> dict:
+    """Toggle a playbook's enabled/disabled state."""
+    playbook = await advisor_service.playbook_engine.toggle_playbook(playbook_id, enabled)
+    if not playbook:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+    return {
+        "id": playbook.id,
+        "name": playbook.name,
+        "enabled": playbook.enabled,
+        "warning": "Setting is in-memory only. Will reset on server restart.",
+    }
+
+
+@router.post("/playbooks/executions/{execution_id}/feedback")
+def submit_playbook_feedback(
+    execution_id: str,
+    decision: str,
+    comment: Optional[str] = None,
+) -> dict:
+    """Submit feedback (accept/reject) on a playbook execution."""
+    execution = advisor_service.playbook_engine.get_execution(execution_id)
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+
+    if decision not in ("accepted", "rejected", "partial"):
+        raise HTTPException(status_code=400, detail="Decision must be: accepted, rejected, or partial")
+
+    from app.models.feedback import ContextSnapshot
+    ctx = ContextSnapshot(
+        node_id=execution.node_id,
+        risk_score=0.0,
+        severity=execution.severity,
+        disruption_type=execution.disruption_type,
+    )
+
+    result = advisor_service.feedback_service.record_feedback(
+        execution_id=execution_id,
+        playbook_id=execution.playbook_id,
+        decision=decision,
+        user_id="admin",
+        comment=comment,
+        context=ctx,
+    )
+
+    if not result:
+        raise HTTPException(status_code=409, detail="Feedback already exists for this execution")
+
+    return {"status": "ok", "feedback_id": result.id}
+
+
+@router.post("/playbooks/{playbook_id}/simulate")
+def simulate_playbook(playbook_id: str) -> dict:
+    """Simulate a playbook execution for testing."""
+    result = advisor_service.playbook_engine.simulate(playbook_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Playbook not found")
+    return result
+
+
+# ==================== FEEDBACK ENDPOINTS (Phase 3) ====================
+
+
+@router.get("/feedback/stats")
+def get_feedback_stats() -> dict:
+    """Get feedback statistics."""
+    return advisor_service.feedback_service.get_stats()
+
+
+@router.get("/feedback/history")
+def get_feedback_history(limit: int = 50) -> dict:
+    """Get feedback history."""
+    history = advisor_service.feedback_service.get_history(limit=limit)
+    return {"history": [h.model_dump() for h in history]}
 
 
 # ==================== WEBSOCKET ENDPOINTS ====================

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
+import axios from 'axios';
 import { authApi } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { Package, Lock, User } from 'lucide-react';
@@ -15,13 +16,16 @@ export function Login() {
   const loginMutation = useMutation({
     mutationFn: () => authApi.login(username, password),
     onSuccess: (data) => {
-      localStorage.setItem('access_token', data.data.access_token);
       localStorage.setItem('refresh_token', data.data.refresh_token);
       setAuth(data.data.user, data.data.access_token);
       navigate('/');
     },
-    onError: () => {
-      setError('Invalid username or password');
+    onError: (error) => {
+      if (axios.isAxiosError(error)) {
+        setError(error.response?.data?.detail || 'Unable to sign in right now');
+        return;
+      }
+      setError('Unable to sign in right now');
     },
   });
 
