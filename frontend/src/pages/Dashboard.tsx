@@ -20,8 +20,18 @@ import {
   CheckCircle2,
   Upload,
 } from 'lucide-react';
+import { useViewMode } from '../context/ViewModeContext';
+import { CFODashboard } from './CFODashboard';
+import { OperationsDashboard } from './OperationsDashboard';
 
 export function Dashboard() {
+  const { viewMode } = useViewMode();
+
+  // Delegate to role-specific views
+  if (viewMode === 'cfo')        return <CFODashboard />;
+  if (viewMode === 'operations') return <OperationsDashboard />;
+
+  // Analyst view (default) ↓
   const [selectedShipmentId, setSelectedShipmentId] = useState('');
   const [riskResult, setRiskResult] = useState<StrandsShipmentRiskResponse | null>(null);
   const [uploadedShipments, setUploadedShipments] = useState<ShipmentInput[] | null>(null);
@@ -349,6 +359,26 @@ function RiskResultPanel({ result }: { result: StrandsShipmentRiskResponse }) {
         </div>
         <p className="mt-4 text-sm text-slate-300 leading-6">{advice.reason}</p>
       </div>
+
+      {(['high', 'critical'].includes(advice.risk_level?.toLowerCase() || '')) && (
+        <div className="rounded-lg border border-red-500 bg-red-500/10 p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-xl">⚠️</span>
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-red-300">High Risk Detected — Resolution Package Available</h4>
+              <p className="mt-1 text-xs text-red-200/70">
+                AI can draft a complete resolution package for this shipment, including executive summaries and communication drafts.
+              </p>
+              <button
+                onClick={() => window.location.href = `/shipments/${advice.shipment_id}`}
+                className="mt-3 inline-flex items-center gap-2 rounded bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 px-3 py-1.5 text-xs font-semibold text-red-200 transition-colors"
+              >
+                View Shipment & Generate Resolution
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <h3 className="text-sm font-semibold text-white mb-2">Recommended Actions</h3>

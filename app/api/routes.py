@@ -18,6 +18,7 @@ from app.models.schemas import (
     ShipmentRiskAdviceResponse,
     StrandsShipmentRiskRequest,
     StrandsShipmentRiskResponse,
+    ResolutionPackage,
 )
 from app.services.advisor_service import AdvisorService
 from app.services.gemini_advice_service import GeminiAdviceService
@@ -88,24 +89,8 @@ def get_strands_orchestrator_service() -> StrandsOrchestratorService:
     return StrandsOrchestratorService()
 
 @lru_cache(maxsize=1)
-def get_advisor_service(
-    ingestion_svc: IngestionService = Depends(get_ingestion_service),
-    risk_svc: RiskService = Depends(get_risk_service),
-    chat_svc: ChatService = Depends(get_chat_service),
-    graph_svc: GraphService = Depends(get_graph_service),
-    shipment_tracker: ShipmentTracker = Depends(get_shipment_tracker),
-    playbook_engine: PlaybookEngine = Depends(get_playbook_engine),
-    feedback_svc: FeedbackService = Depends(get_feedback_service),
-) -> AdvisorService:
-    return AdvisorService(
-        ingestion_service=ingestion_svc,
-        risk_service=risk_svc,
-        chat_service=chat_svc,
-        graph_service=graph_svc,
-        shipment_tracker=shipment_tracker,
-        playbook_engine=playbook_engine,
-        feedback_service=feedback_svc,
-    )
+def get_advisor_service() -> AdvisorService:
+    return AdvisorService()
 
 security = HTTPBearer(auto_error=False)
 
@@ -281,6 +266,46 @@ def advise_shipment_risk(
         score_result=score_result,
         question=req.question,
     )
+
+
+def get_resolution_service() -> "ResolutionService":
+    from app.services.resolution_service import ResolutionService
+    return ResolutionService()
+
+
+@router.post("/shipments/resolution-package", response_model=ResolutionPackage)
+def generate_resolution_package(
+    req: ShipmentRiskAdviceRequest,
+    shipment_risk_service: ShipmentRiskService = Depends(get_shipment_risk_service),
+    gemini_advice_service: GeminiAdviceService = Depends(get_gemini_advice_service),
+    resolution_service: "ResolutionService" = Depends(get_resolution_service)
+) -> ResolutionPackage:
+    from app.services.resolution_service import calculate_financial_impact
+
+    # 1. Score shipment
+    score_result = shipment_risk_service.score_shipment(
+        shipment=req.shipment,
+        intelligence_events=req.intelligence_events,
+        use_live_intelligence=req.use_live_intelligence,
+    )
+    
+    # 2. Build advice (mainly to ensure we have the same reasoning flow, we don't necessarily need to pass it to resolution_service unless we want to, but prompt says "Call gemini_advice_service.build_advice()")
+    advice_result = gemini_advice_service.build_advice(
+        shipment=req.shipment,
+        score_result=score_result,
+        question=req.question,
+    )
+    
+    # 3. Calculate financial impact
+    financial_impact = calculate_financial_impact(req.shipment, score_result)
+    
+    # 4. Generate resolution package
+    return resolution_service.generate_resolution_package(
+        shipment=req.shipment,
+        score_result=score_result,
+        financial_impact=financial_impact
+    )
+
 
 
 @router.post("/agents/strands/shipment-risk", response_model=StrandsShipmentRiskResponse)

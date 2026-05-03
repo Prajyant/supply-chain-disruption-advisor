@@ -21,11 +21,13 @@ import {
 } from 'lucide-react';
 import { agentApi, shipmentApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
-import { EvidenceEvent, ShipmentInput, StrandsShipmentRiskResponse } from '../types';
+import { ResolutionPackageComponent } from '../components/ResolutionPackage';
+import { EvidenceEvent, ShipmentInput, StrandsShipmentRiskResponse, ResolutionPackage } from '../types';
 import { VesselMap } from '../components/VesselMap';
 import { DebugPanel } from '../components/DebugPanel';
 import { LiveWeatherBanner } from '../components/LiveWeatherBanner';
 import { getPositionWeather, type PositionWeatherData } from '../services/weatherService';
+import { useState } from 'react';
 
 type StrandsStatus = {
   agent: string;
@@ -61,6 +63,9 @@ type ProcessorStep = {
 export function ShipmentDetail() {
   const navigate = useNavigate();
   const { shipmentId = '' } = useParams();
+
+  const [resolutionPackage, setResolutionPackage] = useState<ResolutionPackage | null>(null);
+  const [isGeneratingPackage, setIsGeneratingPackage] = useState(false);
 
   const shipmentsQuery = useQuery({
     queryKey: ['demo-shipments'],
@@ -216,14 +221,39 @@ export function ShipmentDetail() {
             </div>
           </div>
 
-          <button
-            onClick={() => analysisQuery.refetch()}
-            disabled={analysisQuery.isFetching}
-            className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary-400/30 bg-primary-500/20 px-4 py-3 text-sm font-semibold text-primary-100 shadow-lg shadow-primary-950/30 transition-all hover:bg-primary-500/30 disabled:opacity-50"
-          >
-            {analysisQuery.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            Refresh analysis
-          </button>
+          <div className="flex flex-col gap-2">
+            {(['high', 'critical'].includes(analysis?.result?.risk_level?.toLowerCase() || '')) && (
+              <button
+                onClick={async () => {
+                  setIsGeneratingPackage(true);
+                  try {
+                    const res = await shipmentApi.generateResolutionPackage(shipment);
+                    setResolutionPackage(res.data);
+                    setTimeout(() => {
+                      document.getElementById('resolution-package-container')?.scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setIsGeneratingPackage(false);
+                  }
+                }}
+                disabled={isGeneratingPackage}
+                className="inline-flex w-fit items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/20 px-4 py-3 text-sm font-bold text-red-200 shadow-lg shadow-red-950/30 transition-all hover:bg-red-500/30 disabled:opacity-50"
+              >
+                {isGeneratingPackage ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>🚨</span>}
+                {isGeneratingPackage ? 'AI is preparing your resolution package...' : 'Generate Resolution Package'}
+              </button>
+            )}
+            <button
+              onClick={() => analysisQuery.refetch()}
+              disabled={analysisQuery.isFetching}
+              className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary-400/30 bg-primary-500/20 px-4 py-3 text-sm font-semibold text-primary-100 shadow-lg shadow-primary-950/30 transition-all hover:bg-primary-500/30 disabled:opacity-50 self-end"
+            >
+              {analysisQuery.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Refresh analysis
+            </button>
+          </div>
         </div>
       </section>
 
@@ -242,6 +272,10 @@ export function ShipmentDetail() {
           <div className="min-w-0 space-y-5">
             <CompactRiskSummary result={analysis} />
             <KeyRiskDrivers result={analysis} positionWeather={positionWeatherQuery.data ?? undefined} />
+            
+            <div id="resolution-package-container">
+              {resolutionPackage && <ResolutionPackageComponent data={resolutionPackage} />}
+            </div>
           </div>
 
           {!isGround && (

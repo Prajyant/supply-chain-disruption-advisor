@@ -125,6 +125,8 @@ export const shipmentApi = {
   },
   runStrandsRisk: (shipment: any, question?: string) =>
     api.post('/agents/strands/shipment-risk', { shipment, question }),
+  generateResolutionPackage: (shipment: any) =>
+    api.post('/shipments/resolution-package', { shipment, intelligence_events: [], use_live_intelligence: true }),
 };
 
 // ==================== Agent API (risk-analysis) ====================

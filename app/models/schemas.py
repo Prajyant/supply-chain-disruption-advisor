@@ -364,3 +364,36 @@ class ShipmentUpdateResult(BaseModel):
     new_status: str
     node_id: Optional[str] = None
     risk_score_change: Optional[float] = None
+
+
+# ==================== RESOLUTION PACKAGE SCHEMAS ====================
+
+
+class ResolutionEmail(BaseModel):
+    """An email draft for the resolution package."""
+    to: str
+    subject: str
+    body: str
+    priority: str
+    send_within_hours: int
+
+
+class CFOSummary(BaseModel):
+    """Executive financial summary for the CFO."""
+    headline: str
+    exposure_usd: float
+    recommended_action: str
+    decision_deadline: str
+    key_facts: list[str]
+
+
+class ResolutionPackage(BaseModel):
+    """A complete autonomous resolution package."""
+    shipment_id: str
+    risk_level: str
+    generated_at: datetime
+    carrier_email: ResolutionEmail
+    alternate_supplier_email: ResolutionEmail
+    internal_escalation_email: ResolutionEmail
+    cfo_summary: CFOSummary
+

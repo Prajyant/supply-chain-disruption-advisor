@@ -10,6 +10,7 @@ import { Settings } from './pages/Settings';
 import { ShipmentDetail } from './pages/ShipmentDetail';
 import { Login } from './pages/Login';
 import { Playbooks } from './pages/Playbooks';
+import { ViewModeProvider } from './context/ViewModeContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,26 +41,28 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Dashboard />} />
-            <Route path="shipments/:shipmentId" element={<ShipmentDetail />} />
-            <Route path="digital-twin" element={<DigitalTwin />} />
-            <Route path="chat" element={<Chat />} />
-            <Route path="playbooks" element={<Playbooks />} />
-            <Route path="settings" element={<Settings />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <ViewModeProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Dashboard />} />
+              <Route path="shipments/:shipmentId" element={<ShipmentDetail />} />
+              <Route path="digital-twin" element={<DigitalTwin />} />
+              <Route path="chat" element={<Chat />} />
+              <Route path="playbooks" element={<Playbooks />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </ViewModeProvider>
     </QueryClientProvider>
   );
 }
