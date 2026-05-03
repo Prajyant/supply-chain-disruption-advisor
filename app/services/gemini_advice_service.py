@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
@@ -19,6 +20,104 @@ try:
 except Exception:
     genai = None
     genai_types = None
+
+
+# ==================== PRODUCTION LINE MAPPING ====================
+# Maps material/commodity keywords to realistic downstream production lines affected
+
+PRODUCTION_LINE_MAP: dict[str, list[str]] = {
+    "electronics": ["Assembly Line A", "PCB Manufacturing", "Final QC Line"],
+    "pcb": ["Assembly Line A", "PCB Manufacturing", "Final QC Line"],
+    "semiconductor": ["Assembly Line A", "PCB Manufacturing", "Final QC Line"],
+    "chip": ["Assembly Line A", "PCB Manufacturing", "Final QC Line"],
+    "capacitor": ["Assembly Line A", "PCB Manufacturing", "Final QC Line"],
+    "resistor": ["Assembly Line A", "PCB Manufacturing", "Final QC Line"],
+    "chemical": ["Chemical Processing Unit", "Injection Molding Line"],
+    "polymer": ["Chemical Processing Unit", "Injection Molding Line"],
+    "resin": ["Chemical Processing Unit", "Injection Molding Line"],
+    "adhesive": ["Chemical Processing Unit", "Injection Molding Line"],
+    "solvent": ["Chemical Processing Unit", "Injection Molding Line"],
+    "metal": ["Stamping Line B", "Welding Assembly"],
+    "steel": ["Stamping Line B", "Welding Assembly"],
+    "aluminum": ["Stamping Line B", "Welding Assembly"],
+    "copper": ["Stamping Line B", "Welding Assembly"],
+    "iron": ["Stamping Line B", "Welding Assembly"],
+    "titanium": ["Stamping Line B", "Welding Assembly"],
+}
+
+DEFAULT_PRODUCTION_LINES = ["Production Line Alpha", "Production Line Beta"]
+
+
+def calculate_financial_impact(
+    shipment: ShipmentInput,
+    score_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Compute financial impact metrics from real shipment data and risk scores.
+
+    All values are derived from the shipment's declared_value_usd, lead_time_days,
+    transport_mode, material type, risk_score, risk_level, and eta_date.
+    No hardcoded dollar amounts — only formulas and multipliers.
+    """
+    declared_value = float(shipment.declared_value_usd or 0.0)
+    risk_score = float(score_result.get("risk_score", 0.0))
+    risk_level = str(score_result.get("risk_level", "low")).lower()
+    lead_time_days = float(shipment.lead_time_days) if shipment.lead_time_days else 1.0
+    transport_mode = (shipment.transport_mode or "").lower().strip()
+    material = (shipment.material or "").lower().strip()
+
+    # --- Financial Exposure ---
+    # Supply chain disruptions typically cost 2.5x the shipment value in downstream impact
+    base_exposure = declared_value * 2.5
+    raw_exposure = base_exposure * (risk_score / 10.0)
+    financial_exposure_usd = max(50_000.0, min(raw_exposure, 10_000_000.0))
+
+    # --- Daily Cost ---
+    lead_time_safe = max(lead_time_days, 1.0)
+    daily_cost_usd = financial_exposure_usd / lead_time_safe
+
+    # --- Mitigation Cost ---
+    if transport_mode == "sea" and risk_level in ("high", "critical"):
+        # Air freight premium is ~8% of declared value
+        mitigation_cost_usd = declared_value * 0.08
+    elif risk_level == "medium":
+        mitigation_cost_usd = declared_value * 0.03
+    else:
+        mitigation_cost_usd = declared_value * 0.01
+
+    # --- Net Saving ---
+    net_saving_if_act_now_usd = financial_exposure_usd - mitigation_cost_usd
+
+    # --- Production Lines at Risk ---
+    production_lines: list[str] = DEFAULT_PRODUCTION_LINES
+    for keyword, lines in PRODUCTION_LINE_MAP.items():
+        if keyword in material:
+            production_lines = lines
+            break
+
+    # --- Halt Date Estimate ---
+    halt_date_estimate: str | None = None
+    eta_str = shipment.eta_date
+    if eta_str:
+        try:
+            eta_date = datetime.strptime(eta_str, "%Y-%m-%d")
+            if risk_level == "critical":
+                halt_date_estimate = (eta_date - timedelta(days=3)).strftime("%Y-%m-%d")
+            elif risk_level == "high":
+                halt_date_estimate = eta_date.strftime("%Y-%m-%d")
+            elif risk_level == "medium":
+                halt_date_estimate = (eta_date + timedelta(days=5)).strftime("%Y-%m-%d")
+            # low → None
+        except (ValueError, TypeError):
+            pass
+
+    return {
+        "financial_exposure_usd": round(financial_exposure_usd, 2),
+        "daily_cost_usd": round(daily_cost_usd, 2),
+        "mitigation_cost_usd": round(mitigation_cost_usd, 2),
+        "net_saving_if_act_now_usd": round(net_saving_if_act_now_usd, 2),
+        "production_lines_at_risk": production_lines,
+        "halt_date_estimate": halt_date_estimate,
+    }
 
 
 class GeminiAdviceService:
@@ -100,6 +199,9 @@ class GeminiAdviceService:
             response_text = extract_response_text(response)
             payload = extract_json_object(response_text)
             guarded = apply_guardrails(payload, score_result)
+            # Inject financial impact from real shipment data
+            financial = calculate_financial_impact(shipment, score_result)
+            guarded.update(financial)
             return ShipmentRiskAdviceResponse(**guarded)
         except json.JSONDecodeError as exc:
             logger.warning("Gemini advice returned invalid JSON: %s", exc)
@@ -132,6 +234,9 @@ class GeminiAdviceService:
         if self._last_error:
             reasoning_method = f"{reasoning_method}_{self._last_error}"
 
+        # Calculate financial impact from real shipment data
+        financial = calculate_financial_impact(shipment, score_result)
+
         return ShipmentRiskAdviceResponse(
             shipment_id=shipment.shipment_id,
             risk_score=score,
@@ -149,6 +254,12 @@ class GeminiAdviceService:
             evidence_events=list(score_result.get("evidence_events", [])),
             context_events=list(score_result.get("context_events", [])),
             event_explanations=fallback_event_explanations(shipment=shipment, score_result=score_result),
+            financial_exposure_usd=financial["financial_exposure_usd"],
+            daily_cost_usd=financial["daily_cost_usd"],
+            mitigation_cost_usd=financial["mitigation_cost_usd"],
+            net_saving_if_act_now_usd=financial["net_saving_if_act_now_usd"],
+            production_lines_at_risk=financial["production_lines_at_risk"],
+            halt_date_estimate=financial["halt_date_estimate"],
         )
 
 

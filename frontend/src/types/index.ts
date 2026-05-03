@@ -31,8 +31,8 @@ export interface Node {
 }
 
 export interface Edge {
-  from_node: string;
-  to_node: string;
+  from: string;
+  to: string;
   type: 'supplies_to' | 'ships_to';
   material_type: string;
   volume: number;
@@ -71,7 +71,7 @@ export interface ShipmentInput {
   origin: string;
   destination: string;
   route_nodes: string[];
-  vessel_imo?: number | null;
+  imo_number?: string | null;
   vessel_name?: string | null;
   vessel_latitude?: number | null;
   vessel_longitude?: number | null;
@@ -132,6 +132,13 @@ export interface ShipmentRiskAdviceResponse {
   evidence_events: EvidenceEvent[];
   context_events: EvidenceEvent[];
   event_explanations: EventExplanation[];
+  // Financial impact fields
+  financial_exposure_usd: number;
+  daily_cost_usd: number;
+  mitigation_cost_usd: number;
+  net_saving_if_act_now_usd: number;
+  production_lines_at_risk: string[];
+  halt_date_estimate: string | null;
 }
 
 export interface StrandsShipmentRiskResponse {

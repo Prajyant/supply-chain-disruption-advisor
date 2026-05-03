@@ -259,6 +259,13 @@ class ShipmentRiskAdviceResponse(BaseModel):
     evidence_events: list[dict[str, Any]]
     context_events: list[dict[str, Any]]
     event_explanations: list[dict[str, Any]]
+    # Financial impact fields
+    financial_exposure_usd: float = 0.0
+    daily_cost_usd: float = 0.0
+    mitigation_cost_usd: float = 0.0
+    net_saving_if_act_now_usd: float = 0.0
+    production_lines_at_risk: list[str] = Field(default_factory=list)
+    halt_date_estimate: Optional[str] = None
 
 
 class StrandsShipmentRiskRequest(BaseModel):

@@ -19,6 +19,7 @@ import {
   Zap,
   CheckCircle2,
   Upload,
+  DollarSign,
 } from 'lucide-react';
 
 export function Dashboard() {
@@ -68,17 +69,22 @@ export function Dashboard() {
     setRisks(risks);
   }
 
-  const criticalRisks = risks?.filter((r: any) => r.severity === 'critical') || [];
-  const highRisks = risks?.filter((r: any) => r.severity === 'high') || [];
+  const filteredRisks = useMemo(
+    () => (risks ?? []).filter((r: any) => r.source !== 'predictive_analysis'),
+    [risks]
+  );
+
+  const criticalRisks = filteredRisks.filter((r: any) => r.severity === 'critical');
+  const highRisks = filteredRisks.filter((r: any) => r.severity === 'high');
   const avgConfidence =
-    risks && risks.length > 0
-      ? Math.round((risks.reduce((sum: number, r: any) => sum + r.confidence, 0) / risks.length) * 100)
+    filteredRisks.length > 0
+      ? Math.round((filteredRisks.reduce((sum: number, r: any) => sum + r.confidence, 0) / filteredRisks.length) * 100)
       : 0;
 
   const metrics = [
     {
       label: 'Total Risks',
-      value: risks?.length || 0,
+      value: filteredRisks.length,
       icon: Activity,
       color: 'text-primary-400',
       bgColor: 'bg-primary-500/10',
@@ -111,7 +117,7 @@ export function Dashboard() {
       <div className="p-8">
         <div className="animate-pulse space-y-4">
           <div className="h-8 bg-slate-800 rounded w-1/4" />
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="h-24 bg-slate-800 rounded-lg" />
             ))}
@@ -147,11 +153,11 @@ export function Dashboard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {metrics.map((metric) => {
           const Icon = metric.icon;
           return (
-            <div key={metric.label} className="card">
+            <div key={metric.label} className="card min-h-[6rem]">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-400 mb-1">{metric.label}</p>
@@ -169,7 +175,7 @@ export function Dashboard() {
       {/* Phase 3: Shipment Tracker Widget */}
       <ShipmentTracker />
 
-      <section className="grid grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] gap-6">
+      <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] gap-6">
         <div className="card">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -287,9 +293,9 @@ export function Dashboard() {
 
       <div>
         <h2 className="text-lg font-semibold text-white mb-4">Recent Risk Assessments</h2>
-        {risks && risks.length > 0 ? (
+        {filteredRisks.length > 0 ? (
           <div className="grid grid-cols-2 gap-4">
-            {risks.slice(0, 10).map((risk: any) => (
+            {filteredRisks.slice(0, 10).map((risk: any) => (
               <RiskCard key={risk.risk_id} risk={risk} />
             ))}
           </div>
@@ -325,8 +331,34 @@ function RiskResultPanel({ result }: { result: StrandsShipmentRiskResponse }) {
     critical: 'text-danger-400 bg-danger-500/10',
   }[advice.risk_level];
 
+  const hasFinancialData = advice.financial_exposure_usd > 0 || advice.net_saving_if_act_now_usd > 0;
+
   return (
     <div className="space-y-4">
+      {/* Financial Impact Hero Numbers */}
+      {hasFinancialData && (
+        <div className="rounded-xl border-2 border-slate-700 bg-[linear-gradient(135deg,rgba(15,23,42,0.9),rgba(2,6,23,0.97)_50%)] p-4">
+          <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <DollarSign className="h-3.5 w-3.5" />
+            Financial Impact
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Exposure</div>
+              <div className="text-2xl font-bold text-orange-300">
+                {formatDashboardFinancial(advice.financial_exposure_usd)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Save If Act Now</div>
+              <div className="text-2xl font-bold text-green-300">
+                {formatDashboardFinancial(advice.net_saving_if_act_now_usd)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -389,4 +421,14 @@ function RiskResultPanel({ result }: { result: StrandsShipmentRiskResponse }) {
       </div>
     </div>
   );
+}
+
+function formatDashboardFinancial(value: number): string {
+  if (value >= 1_000_000) {
+    return `$${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `$${(value / 1_000).toFixed(0)}k`;
+  }
+  return `$${value.toFixed(0)}`;
 }

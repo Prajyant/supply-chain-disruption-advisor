@@ -8,6 +8,7 @@ import {
   CloudSun,
   Cpu,
   Database,
+  DollarSign,
   ExternalLink,
   FileText,
   Loader2,
@@ -18,6 +19,9 @@ import {
   Link as LinkIcon,
   Newspaper,
   Bot,
+  TrendingDown,
+  Factory,
+  Calendar,
 } from 'lucide-react';
 import { agentApi, shipmentApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
@@ -240,6 +244,7 @@ export function ShipmentDetail() {
       {analysis ? (
         <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
           <div className="min-w-0 space-y-5">
+            <FinancialImpactPanel result={analysis} />
             <CompactRiskSummary result={analysis} />
             <KeyRiskDrivers result={analysis} positionWeather={positionWeatherQuery.data ?? undefined} />
           </div>
@@ -846,6 +851,194 @@ function driverExplanation(feature: string): string {
   };
 
   return explanations[feature] || 'This feature contributed to the shipment risk score.';
+}
+
+// Financial Impact Panel — the hero component for financial exposure
+
+function FinancialImpactPanel({ result }: { result: StrandsShipmentRiskResponse }) {
+  const advice = result.result;
+  const {
+    financial_exposure_usd,
+    daily_cost_usd,
+    mitigation_cost_usd,
+    net_saving_if_act_now_usd,
+    production_lines_at_risk,
+    halt_date_estimate,
+    risk_level,
+  } = advice;
+
+  // Don't render if no financial data
+  if (!financial_exposure_usd && !net_saving_if_act_now_usd) return null;
+
+  const isHighSeverity = risk_level === 'high' || risk_level === 'critical';
+  const isMedium = risk_level === 'medium';
+
+  const borderColor = isHighSeverity
+    ? 'border-danger-500/50'
+    : isMedium
+      ? 'border-yellow-500/40'
+      : 'border-slate-700';
+
+  const panelGradient = isHighSeverity
+    ? 'bg-[linear-gradient(135deg,rgba(127,29,29,0.22),rgba(2,6,23,0.97)_40%,rgba(15,23,42,0.96))]'
+    : isMedium
+      ? 'bg-[linear-gradient(135deg,rgba(113,63,18,0.18),rgba(2,6,23,0.97)_40%,rgba(15,23,42,0.96))]'
+      : 'bg-slate-900/90';
+
+  const stripColor = isHighSeverity ? 'bg-danger-400' : isMedium ? 'bg-yellow-400' : 'bg-slate-600';
+
+  // Check if halt date is within 7 days
+  const haltDateUrgent = (() => {
+    if (!halt_date_estimate) return false;
+    try {
+      const halt = new Date(halt_date_estimate);
+      const now = new Date();
+      const diffDays = (halt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+      return diffDays <= 7;
+    } catch {
+      return false;
+    }
+  })();
+
+  return (
+    <section className={`relative min-w-0 overflow-hidden rounded-xl border-2 ${borderColor} ${panelGradient} p-6 shadow-2xl shadow-slate-950/60`}>
+      <div className={`absolute inset-x-0 top-0 h-1.5 ${stripColor}`} />
+
+      {/* Header */}
+      <div className="mb-5 flex items-center gap-3">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isHighSeverity ? 'border border-danger-500/30 bg-danger-500/15' : isMedium ? 'border border-yellow-500/30 bg-yellow-500/15' : 'border border-slate-700 bg-slate-800'}`}>
+          <DollarSign className={`h-5 w-5 ${isHighSeverity ? 'text-danger-300' : isMedium ? 'text-yellow-300' : 'text-slate-400'}`} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-white">Financial Impact Assessment</h2>
+          <p className="text-xs text-slate-400">Calculated from shipment value, risk score, and lead time</p>
+        </div>
+      </div>
+
+      {/* 2x2 Metrics Grid */}
+      <div className="grid grid-cols-2 gap-4 mb-5">
+        <FinancialMetricCard
+          label="Total Exposure"
+          value={formatFinancialAmount(financial_exposure_usd)}
+          icon={<AlertTriangle className="h-4 w-4 text-orange-300" />}
+          sublabel="Downstream impact"
+          variant="default"
+        />
+        <FinancialMetricCard
+          label="Daily Cost"
+          value={`${formatFinancialAmount(daily_cost_usd)}/day`}
+          icon={<TrendingDown className="h-4 w-4 text-yellow-300" />}
+          sublabel="Burn rate while delayed"
+          variant="default"
+        />
+        <FinancialMetricCard
+          label="Act Now Cost"
+          value={formatFinancialAmount(mitigation_cost_usd)}
+          icon={<DollarSign className="h-4 w-4 text-cyan-300" />}
+          sublabel="Mitigation investment"
+          variant="default"
+        />
+        <FinancialMetricCard
+          label="Saving If You Act Now"
+          value={formatFinancialAmount(net_saving_if_act_now_usd)}
+          icon={<CheckCircle2 className="h-4 w-4 text-green-400" />}
+          sublabel="Net value protected"
+          variant="hero"
+        />
+      </div>
+
+      {/* Production Lines + Halt Date */}
+      <div className="space-y-3 border-t border-slate-800/80 pt-4">
+        {production_lines_at_risk.length > 0 && (
+          <div className="flex items-start gap-3">
+            <Factory className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+            <div className="min-w-0">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Production lines at risk</span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {production_lines_at_risk.map((line) => (
+                  <span
+                    key={line}
+                    className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                      isHighSeverity
+                        ? 'border-danger-500/30 bg-danger-500/10 text-danger-200'
+                        : isMedium
+                          ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-200'
+                          : 'border-slate-700 bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {line}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {halt_date_estimate && (
+          <div className="flex items-center gap-3">
+            <Calendar className={`h-4 w-4 shrink-0 ${haltDateUrgent ? 'text-danger-400' : 'text-slate-500'}`} />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Estimated halt date:</span>
+              <span className={`text-sm font-semibold ${haltDateUrgent ? 'text-danger-300 animate-pulse' : 'text-slate-200'}`}>
+                {halt_date_estimate}
+              </span>
+              {haltDateUrgent && (
+                <span className="rounded-full border border-danger-500/30 bg-danger-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-danger-300">
+                  Imminent
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function FinancialMetricCard({
+  label,
+  value,
+  icon,
+  sublabel,
+  variant,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  sublabel: string;
+  variant: 'default' | 'hero';
+}) {
+  const isHero = variant === 'hero';
+
+  return (
+    <div
+      className={`relative overflow-hidden rounded-xl border p-4 transition-colors ${
+        isHero
+          ? 'border-green-500/40 bg-[linear-gradient(135deg,rgba(20,83,45,0.25),rgba(2,6,23,0.95)_50%)] shadow-lg shadow-green-950/20'
+          : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+      }`}
+    >
+      {isHero && <div className="absolute inset-x-0 top-0 h-0.5 bg-green-400" />}
+      <div className="mb-2 flex items-center gap-2">
+        {icon}
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
+      </div>
+      <div className={`font-bold ${isHero ? 'text-2xl text-green-300' : 'text-xl text-white'}`}>
+        {value}
+      </div>
+      <div className="mt-1 text-[11px] text-slate-500">{sublabel}</div>
+    </div>
+  );
+}
+
+function formatFinancialAmount(value: number): string {
+  if (value >= 1_000_000) {
+    return `$${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `$${(value / 1_000).toFixed(0)}k`;
+  }
+  return `$${value.toFixed(0)}`;
 }
 
 // New compact components
