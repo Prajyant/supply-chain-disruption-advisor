@@ -235,11 +235,52 @@ def get_risk(
 
 @router.get("/vessels/{imo_number}")
 async def get_vessel_by_imo(imo_number: str) -> dict:
-    """Fetch vessel telemetry by IMO number."""
+    """Fetch real-time vessel telemetry by IMO number from AIS provider."""
+    # Try AIS engine first (real-time data)
+    from app.ingestion.ais.vessel_worker import get_vessel_worker
+
+    worker = get_vessel_worker()
+    engine = worker.engine
+    if engine:
+        # Check in-memory state from last poll
+        vessel = engine._vessel_states.get(imo_number)
+        if vessel:
+            return {
+                "imo_number": imo_number,
+                "name": vessel.get("name"),
+                "latitude": vessel.get("latitude"),
+                "longitude": vessel.get("longitude"),
+                "speed_knots": vessel.get("speed"),
+                "course_degrees": vessel.get("course"),
+                "status": vessel.get("nav_status") or "UNDERWAY",
+                "destination": vessel.get("destination"),
+                "eta": vessel.get("eta"),
+                "last_update": vessel.get("last_update"),
+                "data_source": "ais_realtime",
+            }
+
+        # Try fetching directly from provider
+        live = await engine.provider.get_vessel_by_imo(imo_number)
+        if live:
+            return {
+                "imo_number": imo_number,
+                "name": live.get("name"),
+                "latitude": live.get("latitude"),
+                "longitude": live.get("longitude"),
+                "speed_knots": live.get("speed"),
+                "course_degrees": live.get("course"),
+                "status": live.get("nav_status") or "UNDERWAY",
+                "destination": live.get("destination"),
+                "eta": live.get("eta"),
+                "last_update": live.get("last_update"),
+                "data_source": "ais_realtime",
+            }
+
+    # Last resort: VesselTrackerClient (direct API URL)
     client = VesselTrackerClient()
     vessel = await asyncio.to_thread(client.get_vessel_by_imo, imo_number)
     if not vessel:
-        raise HTTPException(status_code=404, detail=f"No vessel found for IMO {imo_number}")
+        raise HTTPException(status_code=404, detail=f"No real-time data for IMO {imo_number}. Vessel may not be in AIS coverage.")
     return vessel
 
 
@@ -247,8 +288,9 @@ async def get_vessel_by_imo(imo_number: str) -> dict:
 async def upload_shipments_csv(file: UploadFile = File(...)) -> dict:
     """Upload a CSV file with shipment data.
 
-    Parses the CSV and returns structured shipment objects that the frontend
-    can use for risk analysis and vessel tracking.
+    Parses the CSV and enriches vessel positions with real-time AIS data.
+    CSV lat/lon values are ignored — positions are fetched live from the
+    AIS provider for each vessel IMO number.
     """
     import csv
     import io
@@ -262,6 +304,8 @@ async def upload_shipments_csv(file: UploadFile = File(...)) -> dict:
         reader = csv.DictReader(io.StringIO(text))
 
         shipments = []
+        imo_numbers_to_fetch: list[str] = []
+
         for row in reader:
             # Skip empty rows
             if not any(row.values()):
@@ -280,8 +324,6 @@ async def upload_shipments_csv(file: UploadFile = File(...)) -> dict:
                     return 0
 
             imo = (row.get("imo_number") or "").strip()
-            lat = safe_float(row.get("vessel_latitude"))
-            lon = safe_float(row.get("vessel_longitude"))
 
             shipment = {
                 "shipment_id": (row.get("shipment_id") or f"SHP-{len(shipments)+1:04d}").strip(),
@@ -292,11 +334,11 @@ async def upload_shipments_csv(file: UploadFile = File(...)) -> dict:
                 "imo_number": imo or None,
                 "mmsi": (row.get("mmsi") or "").strip() or None,
                 "vessel_name": (row.get("vessel_name") or "").strip() or None,
-                "vessel_latitude": lat,
-                "vessel_longitude": lon,
-                "vessel_status": (row.get("vessel_status") or "").strip() or None,
-                "vessel_speed_knots": safe_float(row.get("vessel_speed_knots")),
-                "vessel_course_degrees": safe_float(row.get("vessel_course_degrees")),
+                "vessel_latitude": None,
+                "vessel_longitude": None,
+                "vessel_status": None,
+                "vessel_speed_knots": None,
+                "vessel_course_degrees": None,
                 "vessel_progress_percent": safe_float(row.get("vessel_progress_percent")),
                 "transport_mode": "sea",
                 "material": (row.get("material") or "general cargo").strip(),
@@ -310,11 +352,94 @@ async def upload_shipments_csv(file: UploadFile = File(...)) -> dict:
                 "eta_date": (row.get("eta_date") or "").strip() or None,
             }
             shipments.append(shipment)
+            if imo or (shipment.get("mmsi")):
+                imo_numbers_to_fetch.append(imo or shipment.get("mmsi", ""))
+
+        # Enrich with real-time AIS positions
+        enriched_count = 0
+        if imo_numbers_to_fetch:
+            try:
+                from app.ingestion.ais.vessel_worker import get_vessel_worker
+                from app.ingestion.ais.aisstream_provider import AISStreamProvider
+
+                worker = get_vessel_worker()
+                engine = worker.engine
+                if engine:
+                    # Check if using AISStream (MMSI-based) or other (IMO-based)
+                    if isinstance(engine.provider, AISStreamProvider):
+                        # For AISStream, look up by MMSI from the shipment data
+                        for shipment in shipments:
+                            s_mmsi = shipment.get("mmsi")
+                            if s_mmsi and s_mmsi in engine.provider._mmsi_cache:
+                                live = engine.provider._mmsi_cache[s_mmsi]
+                                shipment["vessel_latitude"] = live.get("latitude") or live.get("lat")
+                                shipment["vessel_longitude"] = live.get("longitude") or live.get("lon")
+                                shipment["vessel_speed_knots"] = live.get("speed") or live.get("speed_knots")
+                                shipment["vessel_course_degrees"] = live.get("course") or live.get("course_degrees")
+                                shipment["vessel_status"] = live.get("nav_status") or live.get("status") or "UNDERWAY"
+                                shipment["vessel_name"] = shipment["vessel_name"] or live.get("name")
+                                shipment["data_source"] = "ais_realtime"
+                                enriched_count += 1
+                            else:
+                                # Also check vessel_states (keyed by MMSI for AISStream)
+                                state_key = shipment.get("imo_number") or s_mmsi
+                                if state_key and state_key in engine._vessel_states:
+                                    live = engine._vessel_states[state_key]
+                                    shipment["vessel_latitude"] = live.get("latitude")
+                                    shipment["vessel_longitude"] = live.get("longitude")
+                                    shipment["vessel_speed_knots"] = live.get("speed")
+                                    shipment["vessel_course_degrees"] = live.get("course")
+                                    shipment["vessel_status"] = live.get("nav_status") or "UNDERWAY"
+                                    shipment["vessel_name"] = shipment["vessel_name"] or live.get("name")
+                                    shipment["data_source"] = "ais_realtime"
+                                    enriched_count += 1
+                                else:
+                                    shipment["data_source"] = "no_ais_data"
+                    else:
+                        # Batch fetch from provider (AISHub/MarineTraffic)
+                        unique_imos = list(set(imo_numbers_to_fetch))
+                        live_vessels = await engine.provider.get_vessels_batch(unique_imos)
+
+                        # Build IMO → live data lookup
+                        live_lookup: dict[str, dict] = {}
+                        for v in live_vessels:
+                            v_imo = v.get("imo_number", "")
+                            if v_imo:
+                                live_lookup[v_imo] = v
+
+                        # Also check in-memory states from last poll
+                        for imo in unique_imos:
+                            if imo not in live_lookup and imo in engine._vessel_states:
+                                live_lookup[imo] = engine._vessel_states[imo]
+
+                        # Enrich each shipment
+                        for shipment in shipments:
+                            s_imo = shipment.get("imo_number")
+                            if s_imo and s_imo in live_lookup:
+                                live = live_lookup[s_imo]
+                                shipment["vessel_latitude"] = live.get("latitude") or live.get("lat")
+                                shipment["vessel_longitude"] = live.get("longitude") or live.get("lon")
+                                shipment["vessel_speed_knots"] = live.get("speed") or live.get("speed_knots")
+                                shipment["vessel_course_degrees"] = live.get("course") or live.get("course_degrees")
+                                shipment["vessel_status"] = live.get("nav_status") or live.get("status") or "UNDERWAY"
+                                shipment["vessel_name"] = shipment["vessel_name"] or live.get("name")
+                                shipment["data_source"] = "ais_realtime"
+                                enriched_count += 1
+                            else:
+                                shipment["data_source"] = "no_ais_data"
+
+                    logger.info(
+                        f"CSV upload: enriched {enriched_count}/{len(shipments)} "
+                        f"vessels with real-time AIS positions"
+                    )
+            except Exception as exc:
+                logger.warning(f"AIS enrichment failed, positions will be empty: {exc}")
 
         logger.info(f"CSV upload: parsed {len(shipments)} shipments from {file.filename}")
         return {
             "shipments": shipments,
             "count": len(shipments),
+            "enriched_with_live_ais": enriched_count,
             "filename": file.filename,
         }
     except Exception as e:

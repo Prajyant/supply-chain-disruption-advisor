@@ -95,26 +95,33 @@ class AISHubProvider(AISProviderBase):
                 response.raise_for_status()
                 data = response.json()
 
-                if isinstance(data, list) and len(data) >= 2:
-                    metadata = data[0]
-                    vessels_raw = data[1]
-
-                    if isinstance(metadata, dict) and metadata.get("ERROR", False):
-                        logger.error(f"AISHub API error: {metadata}")
+                if isinstance(data, list):
+                    # Check for error response: [{ERROR: True, ERROR_MESSAGE: "..."}]
+                    if len(data) == 1 and isinstance(data[0], dict) and data[0].get("ERROR"):
+                        error_msg = data[0].get("ERROR_MESSAGE", "Unknown error")
+                        logger.error(f"AISHub API authentication failed: {error_msg}")
                         return list(self._imo_cache.values())
 
-                    vessels = []
-                    self._imo_cache.clear()
-                    for raw in vessels_raw:
-                        vessel = self._parse_vessel(raw)
-                        if vessel and vessel["latitude"] != 0 and vessel["longitude"] != 0:
-                            vessels.append(vessel)
-                            if vessel["imo_number"]:
-                                self._imo_cache[vessel["imo_number"]] = vessel
+                    if len(data) >= 2:
+                        metadata = data[0]
+                        vessels_raw = data[1]
 
-                    self._last_fetch = datetime.utcnow()
-                    logger.info(f"AISHub: Fetched {len(vessels)} vessels, {len(self._imo_cache)} with IMO")
-                    return vessels
+                        if isinstance(metadata, dict) and metadata.get("ERROR", False):
+                            logger.error(f"AISHub API error: {metadata}")
+                            return list(self._imo_cache.values())
+
+                        vessels = []
+                        self._imo_cache.clear()
+                        for raw in vessels_raw:
+                            vessel = self._parse_vessel(raw)
+                            if vessel and vessel["latitude"] != 0 and vessel["longitude"] != 0:
+                                vessels.append(vessel)
+                                if vessel["imo_number"]:
+                                    self._imo_cache[vessel["imo_number"]] = vessel
+
+                        self._last_fetch = datetime.utcnow()
+                        logger.info(f"AISHub: Fetched {len(vessels)} vessels, {len(self._imo_cache)} with IMO")
+                        return vessels
 
                 logger.warning("AISHub: Unexpected response format")
                 return list(self._imo_cache.values())

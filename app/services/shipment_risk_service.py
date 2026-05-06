@@ -336,7 +336,9 @@ class ShipmentRiskService:
             vessel = VesselTrackerClient().get_vessel_by_imo(shipment.imo_number)
 
         if not vessel:
-            logger.warning("No vessel telemetry found for shipment %s", shipment.shipment_id)
+            # Don't warn if we simply don't have IMO — MMSI-only is normal
+            if shipment.imo_number:
+                logger.warning("No vessel telemetry found for shipment %s", shipment.shipment_id)
             return events
 
         events.append(normalize_vessel_event(vessel))

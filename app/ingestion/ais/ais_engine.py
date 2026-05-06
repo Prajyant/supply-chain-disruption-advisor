@@ -34,13 +34,15 @@ class WatchlistEntry:
 
     def __init__(
         self,
-        imo_number: str,
+        imo_number: str = "",
+        mmsi: str = "",
         vessel_name: str = "",
         linked_supplier: str = "",
         linked_shipment_id: str = "",
         notes: str = "",
     ):
         self.imo_number = imo_number.strip()
+        self.mmsi = mmsi.strip()
         self.vessel_name = vessel_name.strip()
         self.linked_supplier = linked_supplier.strip()
         self.linked_shipment_id = linked_shipment_id.strip()
@@ -323,6 +325,7 @@ class AISEngine:
         """Load or reload the watchlist CSV.
 
         Hot-reload: checks file mtime and only reloads if changed.
+        Supports entries with IMO number, MMSI, or both.
         """
         path = Path(self.watchlist_path)
         if not path.exists():
@@ -339,10 +342,12 @@ class AISEngine:
                 reader = csv.DictReader(f)
                 for row in reader:
                     imo = row.get("imo_number", "").strip()
-                    if not imo or imo.startswith("#"):
+                    mmsi = row.get("mmsi", "").strip()
+                    if (not imo and not mmsi) or imo.startswith("#"):
                         continue
                     entries.append(WatchlistEntry(
                         imo_number=imo,
+                        mmsi=mmsi,
                         vessel_name=row.get("vessel_name", ""),
                         linked_supplier=row.get("linked_supplier", ""),
                         linked_shipment_id=row.get("linked_shipment_id", ""),
@@ -361,39 +366,103 @@ class AISEngine:
     async def poll_once(self) -> list[dict[str, Any]]:
         """Perform a single polling cycle for all watchlist vessels.
 
-        Staggers requests across the polling interval to avoid rate limits.
-        For 60 vessels over 300 seconds = 1 request every 5 seconds.
+        Supports both IMO and MMSI-based lookups. For AISStream provider,
+        vessels are looked up by MMSI since that's the AIS primary key.
         """
         watchlist = self.load_watchlist()
         if not watchlist:
             logger.info("No vessels in watchlist, skipping poll")
             return []
 
-        imo_numbers = [entry.imo_number for entry in watchlist]
-        stagger_delay = self.poll_interval / max(len(imo_numbers), 1)
+        # Build lookup keys — use MMSI if no IMO available
+        vessel_keys = []
+        for entry in watchlist:
+            key = entry.imo_number or entry.mmsi
+            if key:
+                vessel_keys.append((key, entry))
 
+        stagger_delay = self.poll_interval / max(len(vessel_keys), 1)
         updated_vessels = []
 
-        for i, imo in enumerate(imo_numbers):
+        # For AISStream, try batch fetch first (reads from cache)
+        from app.ingestion.ais.aisstream_provider import AISStreamProvider
+        if isinstance(self.provider, AISStreamProvider):
+            # Start streaming if not already running
+            if not self.provider._running:
+                await self.provider.start_streaming()
+                # Give it time to connect and receive initial data
+                await asyncio.sleep(5)
+
+            # AISStream streams data continuously — just read from its cache
+            # The provider's MMSI cache is populated by the WebSocket stream
+            for key, entry in vessel_keys:
+                mmsi = entry.mmsi
+                vessel = None
+
+                # Try MMSI cache directly
+                if mmsi and mmsi in self.provider._mmsi_cache:
+                    vessel = self.provider._mmsi_cache[mmsi]
+                elif entry.imo_number:
+                    vessel = self.provider._vessel_cache.get(entry.imo_number)
+
+                if vessel:
+                    # Use MMSI as the state key if no IMO
+                    state_key = entry.imo_number or entry.mmsi
+                    vessel["imo_number"] = entry.imo_number or ""
+                    vessel["mmsi"] = entry.mmsi or vessel.get("mmsi", "")
+                    self._vessel_states[state_key] = vessel
+
+                    # Store position in database
+                    await asyncio.to_thread(self.db.store_position, vessel)
+
+                    # Check for anomalies
+                    anomalies = self._check_anomalies(state_key, vessel)
+                    for anomaly in anomalies:
+                        for callback in self._on_anomaly:
+                            try:
+                                if asyncio.iscoroutinefunction(callback):
+                                    await callback(anomaly)
+                                else:
+                                    callback(anomaly)
+                            except Exception as e:
+                                logger.error(f"Anomaly callback error: {e}")
+
+                    # Notify position update callbacks
+                    for callback in self._on_position_update:
+                        try:
+                            if asyncio.iscoroutinefunction(callback):
+                                await callback(vessel)
+                            else:
+                                callback(vessel)
+                        except Exception as e:
+                            logger.error(f"Position update callback error: {e}")
+
+                    updated_vessels.append(vessel)
+
+            logger.info(f"Poll complete: {len(updated_vessels)}/{len(vessel_keys)} vessels updated")
+            return updated_vessels
+
+        # For other providers (AISHub, MarineTraffic) — poll by IMO
+        for i, (key, entry) in enumerate(vessel_keys):
             if i > 0 and stagger_delay > 0.5:
                 await asyncio.sleep(min(stagger_delay, 5.0))
 
             try:
-                vessel = await self.provider.get_vessel_by_imo(imo)
+                vessel = await self.provider.get_vessel_by_imo(key)
                 if vessel:
-                    vessel["imo_number"] = imo  # Ensure IMO is set
-                    self._vessel_states[imo] = vessel
+                    vessel["imo_number"] = key  # Ensure key is set
+                    self._vessel_states[key] = vessel
 
                     # Store position in database
                     await asyncio.to_thread(self.db.store_position, vessel)
 
                     # Cache identity if not already cached
-                    identity = await asyncio.to_thread(self.db.get_identity, imo)
+                    identity = await asyncio.to_thread(self.db.get_identity, key)
                     if not identity:
                         await asyncio.to_thread(self.db.upsert_identity, vessel)
 
                     # Check for anomalies
-                    anomalies = self._check_anomalies(imo, vessel)
+                    anomalies = self._check_anomalies(key, vessel)
                     for anomaly in anomalies:
                         for callback in self._on_anomaly:
                             try:
@@ -416,18 +485,21 @@ class AISEngine:
 
                     updated_vessels.append(vessel)
                 else:
-                    logger.debug(f"No data returned for IMO {imo}")
+                    logger.debug(f"No data returned for {key}")
 
             except Exception as e:
-                logger.error(f"Error polling IMO {imo}: {e}")
+                logger.error(f"Error polling {key}: {e}")
 
-        logger.info(f"Poll complete: {len(updated_vessels)}/{len(imo_numbers)} vessels updated")
+        logger.info(f"Poll complete: {len(updated_vessels)}/{len(vessel_keys)} vessels updated")
         return updated_vessels
 
     def _check_anomalies(self, imo: str, vessel: dict[str, Any]) -> list[dict[str, Any]]:
         """Check for vessel anomalies: AIS silence, speed anomaly, danger zone entry."""
         anomalies = []
-        watchlist_entry = next((w for w in self._watchlist if w.imo_number == imo), None)
+        watchlist_entry = next(
+            (w for w in self._watchlist if w.imo_number == imo or w.mmsi == imo),
+            None,
+        )
         vessel_name = vessel.get("name") or (watchlist_entry.vessel_name if watchlist_entry else imo)
 
         # 1. AIS Silence Detection
@@ -455,10 +527,11 @@ class AISEngine:
         # 2. Speed Anomaly Detection
         current_speed = vessel.get("speed", 0)
         speed_history = self._previous_speeds.setdefault(imo, [])
-        if len(speed_history) >= 3:
+        if len(speed_history) >= 5:
             avg_speed = sum(speed_history[-6:]) / len(speed_history[-6:])
             speed_change = abs(current_speed - avg_speed)
-            if speed_change > 8.0:  # Major speed anomaly
+            # Only flag if change is > 50% of average AND > 8 knots absolute change
+            if speed_change > 8.0 and avg_speed > 2.0 and speed_change > avg_speed * 0.5:
                 anomalies.append({
                     "type": "speed_anomaly",
                     "imo_number": imo,
@@ -531,7 +604,7 @@ class AISEngine:
                 break
 
         # Find watchlist entry for linked data
-        watchlist_entry = next((w for w in self._watchlist if w.imo_number == imo), None)
+        watchlist_entry = next((w for w in self._watchlist if w.imo_number == imo or w.mmsi == imo), None)
 
         return {
             **vessel,
@@ -548,7 +621,7 @@ class AISEngine:
         silent = 0
         in_danger_zone = 0
 
-        for imo in [w.imo_number for w in self._watchlist]:
+        for imo in [w.imo_number or w.mmsi for w in self._watchlist]:
             status = self.get_vessel_status(imo)
             if not status:
                 continue
@@ -575,13 +648,15 @@ class AISEngine:
         """Get status for all watchlist vessels."""
         results = []
         for entry in self._watchlist:
-            status = self.get_vessel_status(entry.imo_number)
+            key = entry.imo_number or entry.mmsi
+            status = self.get_vessel_status(key)
             if status:
                 results.append(status)
             else:
                 # Vessel not yet polled — return minimal info from watchlist
                 results.append({
                     "imo_number": entry.imo_number,
+                    "mmsi": entry.mmsi,
                     "name": entry.vessel_name,
                     "status": "unknown",
                     "linked_supplier": entry.linked_supplier,

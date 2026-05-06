@@ -20,19 +20,24 @@ def create_ais_provider() -> AISProviderBase:
     """Factory: create the appropriate AIS provider based on configuration.
 
     Reads AIS_PROVIDER and AIS_API_KEY from environment.
-    Falls back to demo mode if no API key is configured.
+    Falls back to demo mode if no API key is configured or if the key is invalid.
     """
     provider_name = os.getenv("AIS_PROVIDER", "demo").lower()
     api_key = os.getenv("AIS_API_KEY", "").strip()
 
     if not api_key or provider_name == "demo":
         from app.ingestion.ais.demo_provider import DemoAISProvider
-        logger.info("Using Demo AIS provider (no API key configured)")
+        logger.info("Using Demo AIS provider (no API key configured or demo mode selected)")
         return DemoAISProvider()
+
+    if provider_name == "aisstream":
+        from app.ingestion.ais.aisstream_provider import AISStreamProvider
+        logger.info("Using AISStream.io real-time WebSocket provider")
+        return AISStreamProvider(api_key=api_key)
 
     if provider_name == "aishub":
         from app.ingestion.ais.aishub_provider import AISHubProvider
-        logger.info("Using AISHub AIS provider")
+        logger.info("Using AISHub AIS provider — will validate key on first poll")
         return AISHubProvider(api_key=api_key)
 
     if provider_name == "marinetraffic":
@@ -92,7 +97,48 @@ class VesselTrackingWorker:
         self._engine.on_position_update(self._handle_position_update)
 
         # Load watchlist immediately
-        self._engine.load_watchlist()
+        entries = self._engine.load_watchlist()
+
+        # If using AISStream provider, pass MMSI watchlist for filtering
+        from app.ingestion.ais.aisstream_provider import AISStreamProvider
+        if isinstance(provider, AISStreamProvider):
+            # Build IMO→MMSI mapping from watchlist CSV and sample CSV
+            import csv
+            imo_to_mmsi: dict[str, str] = {}
+            mmsi_list: list[str] = []
+            
+            # Read from watchlist.csv (has mmsi column)
+            try:
+                with open(watchlist_path, newline="", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        imo = (row.get("imo_number") or "").strip()
+                        mmsi = (row.get("mmsi") or "").strip()
+                        if mmsi:
+                            mmsi_list.append(mmsi)
+                            if imo:
+                                imo_to_mmsi[imo] = mmsi
+            except Exception as e:
+                logger.warning(f"Could not read MMSI from watchlist: {e}")
+
+            # Also try sample_supplier_upload.csv as fallback
+            if not mmsi_list:
+                try:
+                    with open("./sample_supplier_upload.csv", newline="", encoding="utf-8") as f:
+                        reader = csv.DictReader(f)
+                        for row in reader:
+                            imo = (row.get("imo_number") or "").strip()
+                            mmsi = (row.get("mmsi") or "").strip()
+                            if mmsi:
+                                mmsi_list.append(mmsi)
+                                if imo:
+                                    imo_to_mmsi[imo] = mmsi
+                except Exception as e:
+                    logger.warning(f"Could not read MMSI from sample CSV: {e}")
+
+            if mmsi_list:
+                provider.set_watchlist(mmsi_list, imo_to_mmsi)
+                logger.info(f"AISStream provider configured with {len(mmsi_list)} MMSI filters")
 
         logger.info("Vessel tracking worker initialized")
         return self._engine
@@ -126,7 +172,11 @@ class VesselTrackingWorker:
         """Main polling loop."""
         while self._running:
             try:
-                await self._engine.poll_once()
+                updated = await self._engine.poll_once()
+
+                # Fetch marine weather for each vessel's live position
+                if updated:
+                    await self._fetch_vessel_weather(updated)
 
                 # Purge old positions periodically (every 100 polls)
                 retention_days = int(os.getenv("VESSEL_HISTORY_RETENTION_DAYS", "90"))
@@ -141,6 +191,48 @@ class VesselTrackingWorker:
                 logger.error(f"Vessel polling error: {e}")
 
             await asyncio.sleep(self._engine.poll_interval if self._engine else 300)
+
+    async def _fetch_vessel_weather(self, vessels: list[dict[str, Any]]) -> None:
+        """Fetch marine weather at each vessel's current position.
+
+        Adds weather data directly to the vessel state so it's available
+        via the API and WebSocket broadcasts.
+        """
+        from app.ingestion.weather_monitor import fetch_open_meteo_marine_weather
+
+        for vessel in vessels:
+            lat = vessel.get("latitude")
+            lon = vessel.get("longitude")
+            if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+                continue
+            if lat == 0 and lon == 0:
+                continue
+
+            try:
+                weather = await asyncio.to_thread(
+                    fetch_open_meteo_marine_weather, lat, lon
+                )
+                if weather:
+                    # Extract from the 'current' nested object
+                    current = weather.get("current", {})
+                    if not current:
+                        current = weather  # fallback if flat structure
+
+                    # Attach weather to the vessel state
+                    state_key = vessel.get("imo_number") or vessel.get("mmsi", "")
+                    if state_key and state_key in self._engine._vessel_states:
+                        self._engine._vessel_states[state_key]["weather"] = {
+                            "wave_height": current.get("wave_height"),
+                            "wave_direction": current.get("wave_direction"),
+                            "wave_period": current.get("wave_period"),
+                            "swell_wave_height": current.get("swell_wave_height"),
+                            "wind_wave_height": current.get("wind_wave_height"),
+                            "ocean_current_velocity": current.get("ocean_current_velocity"),
+                            "ocean_current_direction": current.get("ocean_current_direction"),
+                            "fetched_at": current.get("time"),
+                        }
+            except Exception as e:
+                logger.debug(f"Weather fetch failed for vessel at {lat},{lon}: {e}")
 
     async def _handle_anomaly(self, anomaly: dict[str, Any]) -> None:
         """Handle a vessel anomaly — broadcast via WebSocket and create risk event.

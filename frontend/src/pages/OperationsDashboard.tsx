@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { loadDemoShipments } from '../services/shipmentData';
 import { useShipmentStore } from '../store/shipmentStore';
 import { networkApi, maritimeApi } from '../services/api';
+import { MaritimeIntelligence } from '../components/MaritimeIntelligence';
 import ReactFlow, {
   Background,
   Controls,
@@ -241,6 +242,11 @@ export function OperationsDashboard() {
         <MaritimeStrip />
       </div>
 
+      {/* ── Full Maritime Intelligence Panel ── */}
+      <div className="px-8 pb-4">
+        <MaritimeIntelligencePanel />
+      </div>
+
       {/* ── Supply Chain Health Bar ── */}
       <div className="px-8 pb-8">
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -338,6 +344,14 @@ function MaritimeStrip() {
         <span className="text-xs text-slate-400">Sanctions:</span>
         <span className="text-xs font-bold text-green-400">OFAC + UN Active</span>
       </div>
+    </div>
+  );
+}
+
+function MaritimeIntelligencePanel() {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+      <MaritimeIntelligence />
     </div>
   );
 }

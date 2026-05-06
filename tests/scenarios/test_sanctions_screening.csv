@@ -1,9 +1,9 @@
 test_id,test_type,lookup_value,lookup_field,expected_sanctions_hit,expected_list_source,expected_risk_level,notes,test_scenario_tag
-SAN-001,entity_name,MAHAN AIR,name,TRUE,OFAC_SDN,critical,Iranian airline - OFAC SDN listed - designated for IRGC-QF support,SANCTIONS_OFAC_HIT
-SAN-002,vessel_imo,9321483,imo_number,FALSE,NONE,low,Maersk Line vessel - major Danish carrier - publicly known clean registry,SANCTIONS_CLEAN_VESSEL
-SAN-003,entity_name,Korea National Insurance Corporation,name,TRUE,OFAC_SDN,critical,DPRK state entity - OFAC DPRK3 program designated,SANCTIONS_UN_ENTITY
-SAN-004,entity_name,Mahan Air,name,TRUE,OFAC_SDN,critical,Iranian airline - OFAC SDN listed - partial case match test,SANCTIONS_PARTIAL_NAME
-SAN-005,entity_name,Maersk Line,name,FALSE,NONE,low,Major Danish shipping company - no sanctions exposure - publicly traded,SANCTIONS_CLEAN_ENTITY
-SAN-006,entity_name,ISLAMIC REPUBLIC OF IRAN SHIPPING LINES,name,TRUE,OFAC_SDN,critical,IRISL - major Iranian shipping entity under comprehensive sanctions,SANCTIONS_IRISL
-SAN-007,route_countries,"Iran,China",countries,TRUE,OFAC_SDN,high,Iran-China trade route subject to US secondary sanctions - OFAC country program,SANCTIONS_ROUTE_IRAN
-SAN-008,route_countries,"United States,Japan",countries,FALSE,NONE,low,US-Japan allied trade corridor - no sanctions programs between these nations,SANCTIONS_ROUTE_CLEAN
+SN-001,vessel_imo,9111111,imo_number,TRUE,OFAC_SDN,CRITICAL,"IMO associated with Iranian oil transport network, appears on OFAC SDN vessel list",SANCTIONS_OFAC_HIT
+SN-002,vessel_imo,9321483,imo_number,FALSE,NONE,LOW,"Maersk Edinburgh - major carrier vessel with clean compliance record",SANCTIONS_CLEAN_VESSEL
+SN-003,entity_name,Korea National Insurance Corporation,entity_name,TRUE,UN_SECURITY_COUNCIL,CRITICAL,"DPRK state entity designated under multiple UN Security Council resolutions",SANCTIONS_UN_ENTITY
+SN-004,entity_name,Mahan Air,entity_name,TRUE,OFAC_SDN,CRITICAL,"Iranian airline designated by OFAC for providing material support to IRGC-QF",SANCTIONS_PARTIAL_NAME
+SN-005,entity_name,Maersk Line A/S,entity_name,FALSE,NONE,LOW,"Major Danish shipping conglomerate with full international compliance",SANCTIONS_CLEAN_ENTITY
+SN-006,vessel_imo,9222222,imo_number,TRUE,OFAC_SDN or EU_SANCTIONS,CRITICAL,"Vessel flagged under Russia-related sanctions post-February 2022 invasion",SANCTIONS_RUSSIA_VESSEL
+SN-007,route_countries,"IR,CN",country_pair,TRUE,OFAC_SDN,HIGH,"Iran-China trade route subject to US secondary sanctions and comprehensive Iran embargo",SANCTIONS_ROUTE_IRAN
+SN-008,route_countries,"US,JP",country_pair,FALSE,NONE,LOW,"US-Japan allied trade corridor with no sanctions restrictions",SANCTIONS_ROUTE_CLEAN

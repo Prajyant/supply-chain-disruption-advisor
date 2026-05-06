@@ -87,12 +87,12 @@ class ResolutionService:
             "by a human expert who knows this specific situation."
         )
 
-        signals_str = ", ".join(score_result.signals) if score_result.signals else "None detected"
+        signals_str = ", ".join(score_result.get("signals", [])) if score_result.get("signals") else "None detected"
         
         user_prompt = f"""Shipment {shipment.shipment_id} from {shipment.supplier} routing {shipment.origin} to 
 {shipment.destination} via {shipment.transport_mode}.
 Material: {shipment.material}, Quantity: {shipment.quantity}
-Risk Level: {score_result.risk_level}, Risk Score: {score_result.risk_score}/10
+Risk Level: {score_result.get("risk_level", "unknown")}, Risk Score: {score_result.get("risk_score", 0)}/10
 Financial Exposure: ${financial_impact['financial_exposure_usd']:,.0f}
 Daily Cost: ${financial_impact['daily_cost_usd']:,.0f}
 Vessel: {getattr(shipment, 'vessel_name', 'Unknown Vessel')}, Status: {getattr(shipment, 'vessel_status', 'Unknown Status')}
@@ -161,7 +161,7 @@ Return ONLY the JSON object."""
             
             # Add generated_at and risk_level to the data
             data["shipment_id"] = shipment.shipment_id
-            data["risk_level"] = score_result.risk_level
+            data["risk_level"] = score_result.get("risk_level", "high")
             data["generated_at"] = datetime.now(timezone.utc).isoformat()
             
             return ResolutionPackage(**data)
@@ -173,16 +173,19 @@ Return ONLY the JSON object."""
     def _fallback_resolution(
         self,
         shipment: ShipmentInput,
-        score_result: ShipmentRiskResponse,
+        score_result,
         financial_impact: Dict[str, float]
     ) -> ResolutionPackage:
         """Generate a realistic hardcoded fallback package."""
         exposure_formatted = f"${financial_impact['financial_exposure_usd']:,.0f}"
         vessel = getattr(shipment, "vessel_name", None) or "the assigned vessel"
+        risk_level = score_result.get("risk_level", "high") if isinstance(score_result, dict) else getattr(score_result, "risk_level", "high")
+        risk_score = score_result.get("risk_score", 7) if isinstance(score_result, dict) else getattr(score_result, "risk_score", 7)
+        signals = score_result.get("signals", []) if isinstance(score_result, dict) else getattr(score_result, "signals", [])
         
         return ResolutionPackage(
             shipment_id=shipment.shipment_id,
-            risk_level=score_result.risk_level,
+            risk_level=risk_level,
             generated_at=datetime.now(timezone.utc),
             carrier_email=ResolutionEmail(
                 to="Carrier Operations Team",
@@ -201,7 +204,7 @@ Return ONLY the JSON object."""
             internal_escalation_email=ResolutionEmail(
                 to="Director of Supply Chain & Head of Procurement",
                 subject=f"High Risk Alert: {shipment.shipment_id} - ${financial_impact['financial_exposure_usd']:,.0f} Exposure",
-                body=f"Leadership,\n\nShipment {shipment.shipment_id} ({shipment.material}) from {shipment.supplier} is currently assessed at a {score_result.risk_score}/10 risk level. Our financial exposure is {exposure_formatted} with only {getattr(shipment, 'inventory_days_cover', 0)} days of inventory cover remaining. I recommend we immediately engage the alternate supplier for spot capacity.\n\nPlease advise if approved.",
+                body=f"Leadership,\n\nShipment {shipment.shipment_id} ({shipment.material}) from {shipment.supplier} is currently assessed at a {risk_score}/10 risk level. Our financial exposure is {exposure_formatted} with only {getattr(shipment, 'inventory_days_cover', 0)} days of inventory cover remaining. I recommend we immediately engage the alternate supplier for spot capacity.\n\nPlease advise if approved.",
                 priority="urgent",
                 send_within_hours=1
             ),
@@ -214,7 +217,7 @@ Return ONLY the JSON object."""
                     f"Shipment {shipment.shipment_id} ({shipment.material}) severely impacted en route to {shipment.destination}.",
                     f"Current inventory cover is only {getattr(shipment, 'inventory_days_cover', 0)} days.",
                     f"Daily cost of disruption estimated at ${financial_impact['daily_cost_usd']:,.0f}.",
-                    f"Primary risk signals: {', '.join(score_result.signals[:2]) if score_result.signals else 'Logistics delays'}."
+                    f"Primary risk signals: {', '.join(signals[:2]) if signals else 'Logistics delays'}."
                 ]
             )
         )

@@ -1,7 +1,7 @@
 test_id,shipment_id_ref,weather_risk_input,sanctions_risk_input,congestion_risk_input,registry_risk_input,tariff_risk_input,geopolitical_risk_input,cargo_value_usd,expected_composite_risk_score_min,expected_composite_risk_score_max,expected_risk_level,failure_mode_if_wrong,test_scenario_tag
-INT-001,SHP-TEST-020,low,low,low,low,low,low,280000,0.0,2.5,low,System is over-sensitizing clean routes - false positive inflation,INTEGRATION_ALL_LOW
-INT-002,SHP-TEST-006,low,critical,low,low,low,low,7200000,7.5,10.0,critical,Sanctions hit not properly escalating composite score - critical factor ignored,INTEGRATION_SANCTIONS_ESCALATION
-INT-003,SHP-TEST-001,high,low,high,low,low,low,2400000,5.5,8.0,high,Multi-factor aggregation not combining weather + congestion correctly,INTEGRATION_MULTI_HIGH
-INT-004,SHP-TEST-015,critical,critical,high,critical,high,critical,8900000,9.0,10.0,critical,Score capping or averaging error diluting maximum-risk scenario,INTEGRATION_ALL_CRITICAL
-INT-005,SHP-TEST-010,medium,medium,medium,medium,medium,medium,9500000,3.5,6.0,medium,Aggregation inflating or deflating uniform medium inputs,INTEGRATION_ALL_MEDIUM
-INT-006,SHP-TEST-016,medium,low,low,low,low,high,18000000,5.5,8.0,high,Cargo value not factored into scoring - high-value amplification missing,INTEGRATION_VALUE_AMPLIFICATION
+INT-001,SHP-BL-020,LOW,LOW,LOW,LOW,LOW,LOW,280000,0.0,0.25,LOW,"System is over-sensitizing clean routes or adding phantom risk factors",INTEGRATION_ALL_LOW
+INT-002,SHP-SN-006,LOW,CRITICAL,LOW,LOW,LOW,LOW,7200000,0.75,1.0,CRITICAL,"Sanctions CRITICAL hit not properly escalating composite score - sanctions must dominate",INTEGRATION_SANCTIONS_ESCALATION
+INT-003,SHP-CG-009,HIGH,LOW,HIGH,LOW,LOW,LOW,12000000,0.55,0.80,HIGH,"Multi-factor aggregation not working - two HIGH inputs should produce HIGH composite",INTEGRATION_MULTI_HIGH
+INT-004,SHP-CM-015,CRITICAL,CRITICAL,CRITICAL,CRITICAL,CRITICAL,CRITICAL,8900000,0.90,1.0,CRITICAL,"Score capping or averaging error - all CRITICAL must produce maximum composite",INTEGRATION_ALL_CRITICAL
+INT-005,SHP-WX-003,MEDIUM,MEDIUM,MEDIUM,MEDIUM,MEDIUM,MEDIUM,890000,0.35,0.60,MEDIUM,"Aggregation inflating or deflating score - uniform MEDIUM should stay MEDIUM",INTEGRATION_ALL_MEDIUM
+INT-006,SHP-AR-019,MEDIUM,LOW,LOW,LOW,LOW,LOW,25000000,0.45,0.75,HIGH,"Cargo value not factored into scoring - $25M cargo should amplify base MEDIUM to HIGH",INTEGRATION_VALUE_AMPLIFICATION

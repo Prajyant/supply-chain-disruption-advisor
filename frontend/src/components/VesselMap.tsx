@@ -25,9 +25,11 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   busan: [35.1796, 129.0756],
   yokohama: [35.4437, 139.6380],
   tokyo: [35.6762, 139.6503],
+  kobe: [34.6901, 135.1956],
+  osaka: [34.6937, 135.5023],
+  kaohsiung: [22.6273, 120.3014],
   singapore: [1.3521, 103.8198],
   hong_kong: [22.3193, 114.1694],
-  kaohsiung: [22.6273, 120.3014],
   mumbai: [19.0760, 72.8777],
   mundra: [22.5108, 69.8048],
   nhava_sheva: [18.9492, 72.9417],
@@ -37,21 +39,55 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   dubai: [25.2048, 55.2708],
   jeddah: [21.5433, 39.1728],
   ras_tanura: [26.6400, 50.1600],
-  // Europe
+  // Europe - Major
   rotterdam: [51.9225, 4.4792],
+  europoort: [51.9500, 4.0300],
   hamburg: [53.5511, 9.9937],
   antwerp: [51.2194, 4.4025],
   bremerhaven: [53.5396, 8.5809],
   felixstowe: [51.9644, 1.3511],
   southampton: [50.9097, -1.4044],
+  portsmouth: [50.8198, -1.0880],
   le_havre: [49.4944, 0.1079],
   marseille: [43.2965, 5.3698],
   genoa: [44.4057, 8.9463],
+  bastia: [42.6975, 9.4530],
   barcelona: [41.3851, 2.1734],
   valencia: [39.4699, -0.3763],
+  palma: [39.5696, 2.6502],
   lisbon: [38.7223, -9.1393],
   piraeus: [37.9435, 23.6481],
+  istanbul: [41.0082, 28.9784],
   constanta: [44.1807, 28.6344],
+  // Europe - Scandinavia & Baltic
+  copenhagen: [55.6761, 12.5683],
+  malmo: [55.6050, 13.0038],
+  gothenburg: [57.7089, 11.9746],
+  stockholm: [59.3293, 18.0686],
+  helsinki: [60.1699, 24.9384],
+  oslo: [59.9139, 10.7522],
+  stavanger: [58.9700, 5.7331],
+  bergen: [60.3913, 5.3221],
+  tromso: [69.6496, 18.9560],
+  hammerfest: [70.6634, 23.6821],
+  harstad: [68.7984, 16.5412],
+  esbjerg: [55.4760, 8.4519],
+  odense: [55.4038, 10.4024],
+  kiel: [54.3233, 10.1228],
+  rostock: [54.0924, 12.0991],
+  gdansk: [54.3520, 18.6466],
+  klaipeda: [55.7033, 21.1443],
+  // Europe - Other
+  immingham: [53.6128, -0.2106],
+  belfast: [54.5973, -5.9301],
+  dublin: [53.3498, -6.2603],
+  london: [51.5074, -0.1278],
+  tilbury: [51.4607, 0.3544],
+  den_helder: [52.9533, 4.7610],
+  texel: [53.0600, 4.8000],
+  ijmuiden: [52.4600, 4.6000],
+  amsterdam: [52.3676, 4.9041],
+  utrecht: [52.0907, 5.1214],
   // Americas
   newark: [40.6895, -74.1745],
   new_york: [40.7128, -74.0060],
@@ -61,6 +97,7 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   seattle: [47.6062, -122.3321],
   vancouver: [49.2827, -123.1207],
   houston: [29.7604, -95.3698],
+  galveston: [29.3013, -94.7977],
   miami: [25.7617, -80.1918],
   savannah: [32.0835, -81.0998],
   charleston: [32.7765, -79.9311],
@@ -68,7 +105,9 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   panama: [8.9824, -79.5198],
   manzanillo: [19.0536, -104.3122],
   lazaro_cardenas: [17.9596, -102.1970],
-  Santos: [-23.9633, -46.3333],
+  santos: [-23.9633, -46.3333],
+  recife: [-8.0476, -34.8770],
+  salvador: [-12.9714, -38.5124],
   // Africa
   durban: [-29.8587, 31.0218],
   cape_town: [-33.9249, 18.4241],
@@ -80,23 +119,71 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   sydney: [-33.8688, 151.2093],
   melbourne: [-37.8136, 144.9631],
   auckland: [-36.8485, 174.7633],
+  // Waterways / Regions
+  suez_canal: [30.5852, 32.2654],
+  pacific_ocean: [28.0, -160.0],
+  north_sea: [56.0, 3.0],
+  english_channel: [50.5, -1.0],
+  baltic_sea: [57.0, 18.0],
+  mediterranean: [38.0, 15.0],
+  gulf_of_mexico: [25.0, -90.0],
+  norwegian_sea: [67.0, 8.0],
+  atlantic_coast: [-5.0, -35.0],
+  marmara: [40.7, 28.9],
+  black_sea: [43.0, 34.0],
+  aegean_sea: [38.5, 25.0],
+  ligurian_sea: [43.5, 9.0],
+  inland_sea: [34.3, 133.5],
+  east_china_sea: [30.0, 126.0],
+  irish_sea: [53.5, -5.0],
+  scheldt: [51.4, 4.0],
+  canal: [52.2, 5.0],
+  nieuwe_waterweg: [51.95, 4.1],
+  thames: [51.5, 0.5],
 };
 
 function getPortCoordinates(location?: string): [number, number] | undefined {
   if (!location) return undefined;
-  // Try exact match with normalized key (lowercase, no special chars)
-  const key = location.toLowerCase().replace(/[^a-z]/g, '');
-  if (PORT_COORDINATES[key]) return PORT_COORDINATES[key];
-  // Try with underscores instead of spaces
-  const keyUnderscore = location.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '');
+
+  // Normalize: lowercase, trim
+  const loc = location.toLowerCase().trim();
+
+  // Try exact match with various key formats
+  const keyNoSpaces = loc.replace(/[^a-z]/g, '');
+  if (PORT_COORDINATES[keyNoSpaces]) return PORT_COORDINATES[keyNoSpaces];
+
+  const keyUnderscore = loc.replace(/\s+/g, '_').replace(/[^a-z_]/g, '');
   if (PORT_COORDINATES[keyUnderscore]) return PORT_COORDINATES[keyUnderscore];
-  // Try partial match (first word)
-  const firstWord = location.toLowerCase().split(/\s+/)[0].replace(/[^a-z]/g, '');
+
+  // Try without common suffixes/prefixes
+  const cleaned = loc
+    .replace(/^port\s+of\s+/i, '')
+    .replace(/\s+port$/i, '')
+    .replace(/,.*$/, '') // Remove country after comma
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z_]/g, '');
+  if (PORT_COORDINATES[cleaned]) return PORT_COORDINATES[cleaned];
+
+  // Try each word individually
+  const words = loc.split(/[\s,|]+/).filter(w => w.length > 2);
+  for (const word of words) {
+    const wordKey = word.replace(/[^a-z]/g, '');
+    if (PORT_COORDINATES[wordKey]) return PORT_COORDINATES[wordKey];
+  }
+
+  // Try partial match against all port keys
   for (const [portKey, coords] of Object.entries(PORT_COORDINATES)) {
-    if (portKey.startsWith(firstWord) || portKey.includes(firstWord)) {
+    // Check if location contains the port key or vice versa
+    if (keyNoSpaces.includes(portKey) || portKey.includes(keyNoSpaces)) {
+      return coords;
+    }
+    // Check underscore version
+    if (keyUnderscore.includes(portKey) || portKey.includes(keyUnderscore.replace(/_/g, ''))) {
       return coords;
     }
   }
+
   return undefined;
 }
 
@@ -114,9 +201,12 @@ interface VesselMapProps {
 
 const STATUS_COLORS: Record<string, string> = {
   underway: '#22c55e', // green
-  anchored: '#eab308', // yellow
+  anchored: '#eab308', // yellow/amber
+  moored: '#f97316', // orange
   waiting: '#eab308', // yellow
   delayed: '#ef4444', // red
+  stopped: '#ef4444', // red
+  not_under_command: '#ef4444', // red
   at_port: '#3b82f6', // blue
   default: '#64748b', // slate
 };
@@ -124,10 +214,48 @@ const STATUS_COLORS: Record<string, string> = {
 function getStatusColor(status?: string): string {
   if (!status) return STATUS_COLORS.default;
   const normalized = status.toLowerCase();
-  if (normalized.includes('underway') || normalized.includes('sailing')) return STATUS_COLORS.underway;
-  if (normalized.includes('anchor') || normalized.includes('wait')) return STATUS_COLORS.anchored;
-  if (normalized.includes('delay') || normalized.includes('stop')) return STATUS_COLORS.delayed;
-  if (normalized.includes('port') || normalized.includes('berth')) return STATUS_COLORS.at_port;
+
+  // Green — actively moving
+  if (
+    normalized.includes('under way') ||
+    normalized.includes('underway') ||
+    normalized.includes('sailing') ||
+    normalized.includes('using engine') ||
+    normalized === 'active'
+  ) {
+    return STATUS_COLORS.underway;
+  }
+
+  // Red — problem states
+  if (
+    normalized.includes('delay') ||
+    normalized.includes('not under command') ||
+    normalized.includes('aground') ||
+    normalized.includes('disabled') ||
+    normalized.includes('stopped')
+  ) {
+    return STATUS_COLORS.delayed;
+  }
+
+  // Yellow/Amber — stationary but not a problem
+  if (
+    normalized.includes('anchor') ||
+    normalized.includes('wait') ||
+    normalized.includes('restricted')
+  ) {
+    return STATUS_COLORS.anchored;
+  }
+
+  // Orange — moored
+  if (normalized.includes('moor') || normalized.includes('berth')) {
+    return STATUS_COLORS.moored;
+  }
+
+  // Blue — at port
+  if (normalized.includes('port')) {
+    return STATUS_COLORS.at_port;
+  }
+
   return STATUS_COLORS.default;
 }
 

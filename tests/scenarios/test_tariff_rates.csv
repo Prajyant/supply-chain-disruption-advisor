@@ -1,9 +1,9 @@
 test_id,origin_country_iso2,destination_country_iso2,product_category,hs_code,hs_description,expected_tariff_rate_min_pct,expected_tariff_rate_max_pct,tariff_type,policy_note,expected_risk_level,test_scenario_tag
-TF-001,CN,US,electronics,8541.40,Photovoltaic cells and solar panels,50,100,PUNITIVE,US Section 301 + AD/CVD duties on Chinese solar cells effective 2024,critical,TARIFF_CN_US_SOLAR
-TF-002,CN,US,metals,7208.51,Hot-rolled steel flat products,25,25,SECTION_301,US Section 232 steel tariffs maintained since 2018,high,TARIFF_CN_US_STEEL
-TF-003,CA,US,automotive,8708.99,Vehicle parts and accessories,0,0,PREFERENTIAL_FTA,USMCA rules of origin satisfied - duty-free bilateral trade,low,TARIFF_CA_US_USMCA
-TF-004,CN,DE,electronics,8471.30,Portable digital computers,0,3.7,MFN,EU Common External Tariff - low MFN rate for electronics,low,TARIFF_CN_DE_ELECTRONICS
-TF-005,CN,IN,metals,7217.10,Wire of iron or non-alloy steel,15,30,ANTI_DUMPING,India anti-dumping duty on Chinese steel wire - BIS investigation 2023,high,TARIFF_CN_IN_STEEL
-TF-006,NZ,AU,food,0402.10,Milk powder concentrated,0,0,PREFERENTIAL_FTA,ANZCERTA/CER agreement - full duty elimination on dairy products,low,TARIFF_NZ_AU_DAIRY
-TF-007,US,FR,food,2208.30,Whiskies,25,25,RETALIATORY,EU retaliatory tariffs on US spirits - WTO Airbus-Boeing dispute legacy,high,TARIFF_US_EU_WHISKEY
-TF-008,JP,BR,electronics,8528.72,Television receivers,16,20,MFN,Brazil high MFN tariff on consumer electronics - Mercosur external tariff,medium,TARIFF_JP_BR_ELECTRONICS
+TF-001,CN,US,Solar Panels,8541.40,Photovoltaic cells and modules,50,100,PUNITIVE,"US Section 301 + AD/CVD duties on Chinese solar cells, rates increased 2024",CRITICAL,TARIFF_CN_US_SOLAR
+TF-002,CN,US,Steel,7208.51,Hot-rolled steel flat products,25,25,SECTION_301,"Section 232 national security tariff on steel imports from China",HIGH,TARIFF_CN_US_STEEL
+TF-003,CA,US,Auto Parts,8708.99,Motor vehicle parts and accessories,0,0,PREFERENTIAL_FTA,"USMCA/CUSMA preferential rate for qualifying North American content",LOW,TARIFF_CA_US_USMCA
+TF-004,CN,DE,Electronics,8471.30,Portable digital automatic data processing machines,0,3.7,MFN,"EU Common External Tariff MFN rate for laptops and portable computers",LOW,TARIFF_CN_DE_ELECTRONICS
+TF-005,CN,IN,Steel Wire,7217.10,Wire of iron or non-alloy steel,15,30,ANTI_DUMPING,"India anti-dumping duty on Chinese steel wire, BIS investigation findings",HIGH,TARIFF_CN_IN_STEEL
+TF-006,NZ,AU,Dairy,0402.10,Milk powder not exceeding 1.5% fat,0,0,PREFERENTIAL_FTA,"ANZCERTA/CER free trade agreement eliminates tariffs on NZ dairy to Australia",LOW,TARIFF_NZ_AU_DAIRY
+TF-007,US,FR,Whiskey,2208.30,Whiskies,25,25,RETALIATORY,"EU retaliatory tariff in response to US steel/aluminum tariffs, WTO dispute DS353",HIGH,TARIFF_US_EU_WHISKEY
+TF-008,JP,BR,Electronics,8528.72,Television receivers color,16,20,MFN,"Brazil high MFN tariff on consumer electronics, Mercosur common external tariff",MEDIUM,TARIFF_JP_BR_ELECTRONICS

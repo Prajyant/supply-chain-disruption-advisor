@@ -39,7 +39,7 @@ class StrandsOrchestratorService:
             try:
                 return self._run_with_strands_tools(req)
             except Exception as exc:
-                logger.warning("Strands tool orchestration failed, falling back locally: %s", exc)
+                logger.debug("Strands tool orchestration unavailable, using local workflow: %s", exc)
 
         return self._run_local_workflow(req)
 

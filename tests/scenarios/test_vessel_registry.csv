@@ -1,6 +1,6 @@
 test_id,vessel_imo,vessel_name,flag_state,build_year,vessel_age_years,gross_tonnage,expected_detention_count_min,expected_detention_count_max,expected_deficiency_count_min,expected_deficiency_count_max,expected_registry_risk_score_min,expected_registry_risk_score_max,expected_risk_level,risk_justification,test_scenario_tag
-VR-001,9795478,MAERSK EDINBURGH,Panama,2015,11,114000,0,2,0,10,0.0,0.5,medium,Demo fallback data - 1 detention and 7 deficiencies produces medium risk,REGISTRY_DEMO_STANDARD
-VR-002,9321483,MAERSK VESSEL,Panama,2015,11,45000,0,2,0,10,0.0,0.5,medium,Demo fallback - all unknown IMOs return same baseline demo data,REGISTRY_DEMO_BASELINE
-VR-003,9811000,EVER GIVEN,Panama,2015,11,220000,0,2,0,10,0.0,0.5,medium,Known vessel but Equasis rate-limited - falls back to demo data,REGISTRY_KNOWN_VESSEL
-VR-004,9999999,UNKNOWN VESSEL,Panama,2015,11,0,0,2,0,10,0.0,0.5,medium,Non-existent vessel - demo fallback returns medium risk baseline,REGISTRY_NOT_FOUND
-VR-005,9703291,MSC OSCAR,Panama,2015,11,197000,0,2,0,10,0.0,0.5,medium,Major carrier vessel - demo fallback when Equasis unavailable,REGISTRY_MAJOR_CARRIER
+VR-001,9795478,Modern Carrier,DNK,2019,7,186000,0,0,0,2,0.0,0.2,LOW,"New vessel from major carrier fleet, full ISM/ISPS compliance, zero detentions",REGISTRY_NEW_COMPLIANT
+VR-002,9400001,Mid Ocean,PAN,2008,18,45000,1,2,3,8,0.3,0.5,MEDIUM,"Mid-age vessel with minor deficiencies, Panama flag with adequate oversight",REGISTRY_MID_AGE
+VR-003,9100001,Rusty Hulk,CMR,1989,37,12000,4,8,10,25,0.75,1.0,CRITICAL,"Vessel age >30 years, multiple PSC detentions, high deficiency count, Cameroon flag weak enforcement",REGISTRY_OLD_DETAINED
+VR-004,9200001,Convenience Runner,COM,1997,29,18000,2,5,8,15,0.6,0.85,HIGH,"Flag of convenience (Comoros) with weak enforcement regime, vessel age approaching 30 years",REGISTRY_FOC_HIGH_RISK
+VR-005,9999999,Unknown Vessel,UNKNOWN,0,0,0,0,0,0,0,0.5,0.5,MEDIUM,"Non-existent IMO should default to medium risk - err on side of caution for unknown vessels",REGISTRY_NOT_FOUND

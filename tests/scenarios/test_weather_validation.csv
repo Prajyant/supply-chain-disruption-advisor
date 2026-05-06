@@ -1,11 +1,11 @@
 test_id,location_name,latitude,longitude,month_to_test,expected_weather_condition,expected_wave_height_min_m,expected_wave_height_max_m,expected_wind_speed_min_knots,expected_wind_speed_max_knots,expected_risk_level,risk_justification,api_field_to_check,test_scenario_tag
-WX-001,Cape of Good Hope,-34.357,18.474,7,Gale/Storm,5.0,12.0,35,60,high,Southern Hemisphere winter storm belt - frequent gale-force winds June-August,marine.wave_height_m,WEATHER_CAPE_WINTER
-WX-002,South China Sea,15.000,115.000,9,Tropical cyclone risk,4.0,15.0,40,120,critical,Peak typhoon season corridor - Category 3-5 storms historically recorded August-October,marine.wave_height_m,WEATHER_SCS_TYPHOON
-WX-003,Bay of Bengal,13.000,84.000,7,Monsoon/Cyclone,3.0,8.0,25,45,high,SW monsoon season - cyclone formation zone active June-September,marine.wave_height_m,WEATHER_BOB_MONSOON
-WX-004,North Atlantic,50.000,-30.000,1,Severe storm,8.0,14.0,40,70,high,North Atlantic winter storm corridor - extreme wave heights December-February,marine.wave_height_m,WEATHER_NATL_WINTER
-WX-005,Strait of Malacca,2.500,101.500,3,Calm/Light breeze,0.2,1.0,5,15,low,Sheltered equatorial strait - calm year-round with minimal seasonal variation,marine.wave_height_m,WEATHER_MALACCA_CALM
-WX-006,Arabian Sea,17.000,65.000,6,Strong monsoon,3.0,7.0,25,40,high,SW monsoon onset - strong winds and heavy swell in Arabian Sea June-September,marine.wave_height_m,WEATHER_ARABIAN_MONSOON
-WX-007,Mediterranean Sea,35.000,18.000,7,Calm/Light,0.5,1.5,5,15,low,Mediterranean summer - stable high pressure system - minimal wave activity,marine.wave_height_m,WEATHER_MED_SUMMER
-WX-008,Drake Passage,-58.000,-65.000,10,Severe/Storm,6.0,15.0,35,80,critical,Roaring Forties/Furious Fifties - year-round extreme conditions - most dangerous sea passage,marine.wave_height_m,WEATHER_DRAKE_PASSAGE
-WX-009,Red Sea,20.000,38.000,8,Dust storms / extreme heat,1.5,3.0,15,30,medium,Summer shamal winds - dust storms reduce visibility - moderate sea state,weather.wind_speed_kmh,WEATHER_RED_SEA_SUMMER
-WX-010,Baltic Sea,60.000,20.000,2,Ice formation risk,1.0,4.0,15,35,medium,Winter ice formation in northern Baltic - icebreaker assistance may be required,marine.wave_height_m,WEATHER_BALTIC_ICE
+WX-001,Cape of Good Hope,-34.357,18.474,7,Gale/Storm,5.0,12.0,35,60,HIGH,"Southern Hemisphere winter storm belt, frequent gale-force winds and heavy swells June-August",significant_wave_height,WEATHER_CAPE_WINTER
+WX-002,South China Sea,15.000,115.000,9,Tropical cyclone risk,4.0,15.0,40,120,CRITICAL,"Peak typhoon season in Western Pacific basin, Category 3-5 storms historically frequent September",significant_wave_height,WEATHER_SCS_TYPHOON
+WX-003,Bay of Bengal,13.000,84.000,7,Monsoon/Cyclone,3.0,8.0,25,45,HIGH,"Southwest monsoon peak, cyclone formation zone with historically high cyclogenesis frequency",significant_wave_height,WEATHER_BOB_MONSOON
+WX-004,North Atlantic,50.000,-30.000,1,Severe storm,8.0,14.0,40,70,HIGH,"North Atlantic winter storm track, extratropical cyclones produce extreme wave heights",significant_wave_height,WEATHER_NATL_WINTER
+WX-005,Strait of Malacca,2.500,101.500,3,Calm/Light breeze,0.2,1.0,5,15,LOW,"Sheltered equatorial strait, minimal seasonal variation, protected from open ocean swells",significant_wave_height,WEATHER_MALACCA_CALM
+WX-006,Arabian Sea,17.000,65.000,6,Strong monsoon,3.0,7.0,25,40,HIGH,"Southwest monsoon onset brings strong winds and high seas to Arabian Sea June-September",significant_wave_height,WEATHER_ARABIAN_MONSOON
+WX-007,Mediterranean Sea,35.000,18.000,7,Calm/Light,0.5,1.5,5,15,LOW,"Mediterranean summer anticyclone dominates, minimal storm activity July-August",significant_wave_height,WEATHER_MED_SUMMER
+WX-008,Drake Passage,-58.000,-65.000,10,Severe/Storm,6.0,15.0,35,80,CRITICAL,"Furious Fifties convergence zone, year-round extreme conditions, no seasonal respite",significant_wave_height,WEATHER_DRAKE_PASSAGE
+WX-009,Red Sea,20.000,38.000,8,Dust storms / extreme heat,1.5,3.0,15,30,MEDIUM,"Summer shamal winds bring dust storms and reduced visibility, moderate sea state",wind_speed,WEATHER_RED_SEA_SUMMER
+WX-010,Baltic Sea,60.000,20.000,2,Ice formation risk,1.0,4.0,15,35,MEDIUM,"Winter ice formation in northern Baltic, icebreaker assistance may be required",ice_coverage,WEATHER_BALTIC_ICE

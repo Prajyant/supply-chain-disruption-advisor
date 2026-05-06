@@ -1,9 +1,9 @@
 test_id,port_name,country,un_locode,expected_congestion_level,expected_avg_turnaround_days_min,expected_avg_turnaround_days_max,global_avg_turnaround_days,expected_risk_level,congestion_known_cause,test_scenario_tag
-PC-001,Long Beach,USA,USLGB,high,4.0,7.0,1.2,high,High import volume - labor agreements - post-COVID backlog legacy,CONGESTION_LONGBEACH
-PC-002,Shanghai,China,CNSHA,low,1.5,3.0,1.2,low,Worlds busiest port by TEU - high volume but efficient operations,CONGESTION_SHANGHAI
-PC-003,Singapore,Singapore,SGSIN,low,0.8,1.5,1.2,low,World-class port infrastructure - automated terminals - efficient transshipment hub,CONGESTION_SINGAPORE_LOW
-PC-004,Chittagong,Bangladesh,BDCGP,high,5.0,12.0,1.2,high,Limited berths - high garment export volume - infrastructure constraints,CONGESTION_CHITTAGONG
-PC-005,Antwerp,Belgium,BEANR,low,1.0,3.5,1.2,low,Generally efficient European port,CONGESTION_ANTWERP
-PC-006,Lagos,Nigeria,NGLOS,critical,7.0,20.0,1.2,critical,Infrastructure deficit - customs delays - security concerns,CONGESTION_LAGOS
-PC-007,Rotterdam,Netherlands,NLRTM,low,0.8,1.5,1.2,low,Europes most automated port - Maasvlakte 2 expansion,CONGESTION_ROTTERDAM_LOW
-PC-008,Colombo,Sri Lanka,LKCMB,medium,2.0,5.0,1.2,medium,Regional transshipment hub with capacity constraints during peak seasons,CONGESTION_COLOMBO
+PC-001,Long Beach,USA,USLGB,HIGH,4.5,7.0,1.2,HIGH,"High import volume from Asia, labor agreements, post-COVID backlog legacy",CONGESTION_LONGBEACH
+PC-002,Shanghai,China,CNSHA,MEDIUM,1.5,3.0,1.2,MEDIUM,"World's busiest port by TEU volume but efficient automated operations",CONGESTION_SHANGHAI
+PC-003,Singapore,Singapore,SGSIN,LOW,0.8,1.2,1.2,LOW,"World-class port infrastructure, highly automated, efficient transshipment hub",CONGESTION_SINGAPORE_LOW
+PC-004,Chittagong,Bangladesh,BDCGP,CRITICAL,5.0,9.0,1.2,CRITICAL,"Limited berths, high garment export volume, infrastructure constraints, draft limitations",CONGESTION_CHITTAGONG
+PC-005,Antwerp,Belgium,BEANR,MEDIUM,1.0,3.5,1.2,MEDIUM,"Generally efficient European hub but subject to periodic labor disputes and strikes",CONGESTION_ANTWERP
+PC-006,Lagos Apapa,Nigeria,NGLOS,CRITICAL,7.0,14.0,1.2,CRITICAL,"Infrastructure deficit, customs delays, security concerns, bribery bottlenecks, road access issues",CONGESTION_LAGOS
+PC-007,Rotterdam,Netherlands,NLRTM,LOW,0.8,1.5,1.2,LOW,"Europe's largest and most automated port, Maasvlakte 2 expansion provides ample capacity",CONGESTION_ROTTERDAM_LOW
+PC-008,Colombo,Sri Lanka,LKCMB,MEDIUM,2.0,4.0,1.2,MEDIUM,"Regional transshipment hub with capacity constraints during peak seasons",CONGESTION_COLOMBO

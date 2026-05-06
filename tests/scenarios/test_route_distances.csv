@@ -1,9 +1,9 @@
 test_id,origin_port,origin_lat,origin_lon,destination_port,destination_lat,destination_lon,expected_distance_nm_min,expected_distance_nm_max,assumed_vessel_speed_knots,expected_eta_days_min,expected_eta_days_max,route_notes,test_scenario_tag
-RD-001,Shanghai,31.23,121.47,Los Angeles,33.74,-118.27,4500,10000,14,13.4,29.8,Trans-Pacific - Searoute routing varies by algorithm path selection,ROUTE_TRANSPACIFIC
-RD-002,Rotterdam,51.93,4.48,New York,40.66,-74.04,2600,5800,16,6.8,15.1,Trans-Atlantic - routing depends on great circle vs shipping lane,ROUTE_TRANSATLANTIC
-RD-003,Singapore,1.26,103.82,Dubai,25.04,55.14,2800,6000,14,8.3,17.9,Via Indian Ocean - multiple valid routing paths,ROUTE_SG_DUBAI
-RD-004,Durban,-29.87,31.03,Rotterdam,51.93,4.48,5500,12000,14,16.4,35.7,Cape route - significant variance based on West Africa waypoints,ROUTE_CAPE_GOOD_HOPE
-RD-005,Jeddah,21.49,39.17,Rotterdam,51.93,4.48,2500,7000,16,6.5,18.2,Suez route - distance depends on canal transit modeling,ROUTE_SUEZ
-RD-006,Shanghai,31.23,121.47,Rotterdam,51.93,4.48,5000,16000,14,14.9,47.6,Asia-Europe - longest route with most variance,ROUTE_ASIA_EUROPE
-RD-007,Singapore,1.26,103.82,Hong Kong,22.32,114.17,1400,2500,12,4.9,8.7,Short regional route - relatively stable,ROUTE_SHORT_FEEDER
-RD-008,Felixstowe,51.96,1.35,Rotterdam,51.93,4.48,100,280,14,0.3,0.83,Short North Sea crossing - minimal variance,ROUTE_SHORT_NORTHSEA
+RD-001,Shanghai,31.23,121.47,Los Angeles,33.74,-118.27,5600,6200,14,16.7,18.5,"Trans-Pacific great circle route via North Pacific",ROUTE_TRANSPACIFIC
+RD-002,Rotterdam,51.93,4.48,New York,40.66,-74.04,3300,3700,16,8.6,9.6,"Trans-Atlantic northern route via English Channel",ROUTE_TRANSATLANTIC
+RD-003,Singapore,1.26,103.82,Dubai,25.04,55.14,3600,4000,14,10.7,11.9,"Via Malacca Strait and Indian Ocean to Persian Gulf",ROUTE_SG_DUBAI
+RD-004,Durban,-29.87,31.03,Rotterdam,51.93,4.48,9500,10500,14,28.3,31.3,"Cape of Good Hope route northbound via West Africa coast",ROUTE_CAPE_GOOD_HOPE
+RD-005,Jeddah,21.49,39.17,Rotterdam,51.93,4.48,6800,7400,16,17.7,19.3,"Via Suez Canal, Mediterranean, and Strait of Gibraltar",ROUTE_SUEZ
+RD-006,Jeddah,21.49,39.17,Rotterdam,51.93,4.48,12000,13500,16,31.3,35.2,"Cape diversion when Red Sea/Suez blocked - adds 5000-6000nm penalty",ROUTE_CAPE_DIVERSION_REDSEA
+RD-007,Singapore,1.26,103.82,Port Klang,3.00,101.39,150,200,12,0.5,0.7,"Short feeder route through Malacca Strait",ROUTE_SHORT_FEEDER
+RD-008,Felixstowe,51.96,1.35,Rotterdam,51.93,4.48,120,160,14,0.4,0.5,"Short North Sea crossing between UK and Netherlands",ROUTE_SHORT_NORTHSEA
