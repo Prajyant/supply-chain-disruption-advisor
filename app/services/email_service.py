@@ -1,7 +1,12 @@
-"""Email service using AWS SES for sending supply chain alerts and notifications."""
+"""Email service using AWS SES for sending supply chain alerts and notifications.
+
+Supports role-based routing: alerts are automatically sent to the right people
+based on the alert category (operations, finance, analyst, executive).
+"""
 from __future__ import annotations
 
 import logging
+from enum import Enum
 from typing import Any
 
 import boto3
@@ -11,6 +16,58 @@ from pydantic import BaseModel
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------------------------
+# Alert categories → role routing
+# ------------------------------------------------------------------
+
+class AlertCategory(str, Enum):
+    """Categories that determine who receives an alert."""
+    OPERATIONS = "operations"    # Shipment delays, logistics issues, port disruptions
+    FINANCE = "finance"          # Cost impacts, tariff changes, budget overruns
+    ANALYST = "analyst"          # Risk assessments, trend analysis, predictions
+    EXECUTIVE = "executive"      # Critical escalations, major disruptions
+    ALL = "all"                  # Broadcast to everyone
+
+
+# Maps disruption types to alert categories
+DISRUPTION_CATEGORY_MAP: dict[str, AlertCategory] = {
+    # Operations
+    "shipping_delay": AlertCategory.OPERATIONS,
+    "port_congestion": AlertCategory.OPERATIONS,
+    "logistics_failure": AlertCategory.OPERATIONS,
+    "weather_disruption": AlertCategory.OPERATIONS,
+    "vessel_delay": AlertCategory.OPERATIONS,
+    "route_disruption": AlertCategory.OPERATIONS,
+    "capacity_shortage": AlertCategory.OPERATIONS,
+    "labor_strike": AlertCategory.OPERATIONS,
+    # Finance
+    "tariff_change": AlertCategory.FINANCE,
+    "cost_increase": AlertCategory.FINANCE,
+    "currency_fluctuation": AlertCategory.FINANCE,
+    "insurance_claim": AlertCategory.FINANCE,
+    "budget_overrun": AlertCategory.FINANCE,
+    # Analyst
+    "demand_shift": AlertCategory.ANALYST,
+    "market_volatility": AlertCategory.ANALYST,
+    "supplier_risk": AlertCategory.ANALYST,
+    "geopolitical": AlertCategory.ANALYST,
+    "trade_policy": AlertCategory.ANALYST,
+    # Executive (critical only)
+    "supplier_bankruptcy": AlertCategory.EXECUTIVE,
+    "sanctions": AlertCategory.EXECUTIVE,
+    "force_majeure": AlertCategory.EXECUTIVE,
+    "plant_shutdown": AlertCategory.EXECUTIVE,
+}
+
+# Severity-based escalation: critical always goes to executive too
+SEVERITY_ESCALATION: dict[str, list[AlertCategory]] = {
+    "critical": [AlertCategory.EXECUTIVE, AlertCategory.OPERATIONS],
+    "high": [AlertCategory.OPERATIONS],
+    "medium": [],
+    "low": [],
+}
 
 
 class EmailRequest(BaseModel):
@@ -29,10 +86,12 @@ class EmailResult(BaseModel):
     success: bool
     message_id: str | None = None
     error: str | None = None
+    recipients_notified: list[str] | None = None
+    category: str | None = None
 
 
 class EmailService:
-    """AWS SES email service for supply chain notifications."""
+    """AWS SES email service with role-based alert routing."""
 
     def __init__(self) -> None:
         self._client = None
@@ -61,15 +120,85 @@ class EmailService:
         """Return the configured sender email address."""
         return self._settings.ses_sender_email
 
-    def send_email(self, request: EmailRequest) -> EmailResult:
-        """Send an email via AWS SES.
+    # ------------------------------------------------------------------
+    # Role-based recipient resolution
+    # ------------------------------------------------------------------
 
-        Args:
-            request: Email request with recipients, subject, and body.
+    def get_recipients_for_category(self, category: AlertCategory) -> list[str]:
+        """Resolve email recipients for a given alert category.
+
+        Reads from environment config:
+        - SES_RECIPIENTS_OPERATIONS -> ops team
+        - SES_RECIPIENTS_FINANCE -> CFO, finance team
+        - SES_RECIPIENTS_ANALYST -> risk analysts
+        - SES_RECIPIENTS_EXECUTIVE -> C-suite, VP supply chain
+        - SES_ALERT_RECIPIENTS -> fallback for all
+        """
+        settings = self._settings
+        category_env_map = {
+            AlertCategory.OPERATIONS: settings.ses_recipients_operations,
+            AlertCategory.FINANCE: settings.ses_recipients_finance,
+            AlertCategory.ANALYST: settings.ses_recipients_analyst,
+            AlertCategory.EXECUTIVE: settings.ses_recipients_executive,
+            AlertCategory.ALL: settings.ses_alert_recipients,
+        }
+
+        raw = category_env_map.get(category, "")
+        if raw:
+            return [e.strip() for e in raw.split(",") if e.strip()]
+
+        # Fallback to general alert recipients
+        fallback = settings.ses_alert_recipients
+        if fallback:
+            return [e.strip() for e in fallback.split(",") if e.strip()]
+
+        return []
+
+    def resolve_recipients(
+        self,
+        disruption_type: str = "",
+        severity: str = "medium",
+        explicit_recipients: list[str] | None = None,
+    ) -> tuple[list[str], AlertCategory]:
+        """Determine who should receive an alert based on disruption type and severity.
+
+        Logic:
+        1. If explicit recipients are provided, use those.
+        2. Otherwise, map disruption_type -> category -> recipients.
+        3. Apply severity escalation (critical -> also notify executive).
+        4. Deduplicate.
 
         Returns:
-            EmailResult with success status and message ID.
+            Tuple of (deduplicated recipient list, primary category).
         """
+        # Determine primary category
+        category = DISRUPTION_CATEGORY_MAP.get(
+            disruption_type.lower().strip(),
+            AlertCategory.OPERATIONS,
+        )
+
+        if explicit_recipients:
+            return explicit_recipients, category
+
+        recipients: set[str] = set()
+
+        # Primary category recipients
+        recipients.update(self.get_recipients_for_category(category))
+
+        # Severity-based escalation
+        escalation_categories = SEVERITY_ESCALATION.get(severity.lower(), [])
+        for esc_category in escalation_categories:
+            if esc_category != category:
+                recipients.update(self.get_recipients_for_category(esc_category))
+
+        return list(recipients), category
+
+    # ------------------------------------------------------------------
+    # Core send
+    # ------------------------------------------------------------------
+
+    def send_email(self, request: EmailRequest) -> EmailResult:
+        """Send an email via AWS SES."""
         if not self.sender:
             return EmailResult(success=False, error="SES sender email not configured (SES_SENDER_EMAIL)")
 
@@ -102,8 +231,8 @@ class EmailService:
         try:
             response = self.client.send_email(**kwargs)
             message_id = response.get("MessageId", "")
-            logger.info("Email sent successfully: MessageId=%s, To=%s", message_id, request.to)
-            return EmailResult(success=True, message_id=message_id)
+            logger.info("Email sent: MessageId=%s, To=%s", message_id, request.to)
+            return EmailResult(success=True, message_id=message_id, recipients_notified=request.to)
         except ClientError as exc:
             error_msg = exc.response["Error"]["Message"]
             logger.error("SES send failed: %s", error_msg)
@@ -111,6 +240,60 @@ class EmailService:
         except Exception as exc:
             logger.error("Email send failed: %s", exc)
             return EmailResult(success=False, error=str(exc))
+
+    # ------------------------------------------------------------------
+    # Smart routed alert (auto-routes based on disruption type + severity)
+    # ------------------------------------------------------------------
+
+    def send_routed_alert(
+        self,
+        risk_severity: str,
+        risk_headline: str,
+        supplier: str = "",
+        disruption_type: str = "",
+        recommendations: list[str] | None = None,
+        explicit_recipients: list[str] | None = None,
+    ) -> EmailResult:
+        """Send a risk alert with automatic role-based routing.
+
+        This is the main method to call. It figures out who should be
+        notified based on the disruption type and severity level.
+
+        Examples:
+        - shipping_delay + high -> ops team + ops escalation
+        - tariff_change + medium -> finance team
+        - supplier_bankruptcy + critical -> executive + ops
+        - geopolitical + high -> analyst + ops escalation
+        """
+        recipients, category = self.resolve_recipients(
+            disruption_type=disruption_type,
+            severity=risk_severity,
+            explicit_recipients=explicit_recipients,
+        )
+
+        if not recipients:
+            return EmailResult(
+                success=False,
+                error="No recipients resolved. Configure SES_RECIPIENTS_* or SES_ALERT_RECIPIENTS in .env",
+                category=category.value,
+            )
+
+        logger.info(
+            "Routing alert: type=%s, severity=%s, category=%s, recipients=%s",
+            disruption_type, risk_severity, category.value, recipients,
+        )
+
+        result = self.send_risk_alert(
+            to=recipients,
+            risk_severity=risk_severity,
+            risk_headline=risk_headline,
+            supplier=supplier,
+            disruption_type=disruption_type,
+            recommendations=recommendations,
+            subject_prefix=f"[{category.value.upper()}]",
+        )
+        result.category = category.value
+        return result
 
     # ------------------------------------------------------------------
     # Pre-built notification templates
@@ -124,17 +307,9 @@ class EmailService:
         supplier: str = "",
         disruption_type: str = "",
         recommendations: list[str] | None = None,
+        subject_prefix: str = "",
     ) -> EmailResult:
-        """Send a risk alert email to stakeholders.
-
-        Args:
-            to: Recipient email addresses.
-            risk_severity: critical, high, medium, or low.
-            risk_headline: Short description of the risk.
-            supplier: Affected supplier name.
-            disruption_type: Type of disruption.
-            recommendations: List of recommended actions.
-        """
+        """Send a risk alert email to specified recipients."""
         severity_colors = {
             "critical": "#dc2626",
             "high": "#ea580c",
@@ -151,7 +326,7 @@ class EmailService:
         body_html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: {color}; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
-                <h2 style="margin: 0;">⚠️ Supply Chain Risk Alert — {risk_severity.upper()}</h2>
+                <h2 style="margin: 0;">&#9888;&#65039; Supply Chain Risk Alert &mdash; {risk_severity.upper()}</h2>
             </div>
             <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
                 <p style="font-size: 16px; margin-top: 0;"><strong>{risk_headline}</strong></p>
@@ -162,50 +337,50 @@ class EmailService:
                 </table>
                 {recs_html}
                 <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
-                <p style="color: #6b7280; font-size: 12px;">This alert was generated by the Supply Chain Disruption Advisor. Log in to the dashboard for full details.</p>
+                <p style="color: #6b7280; font-size: 12px;">This alert was generated by the Supply Chain Disruption Advisor.</p>
             </div>
         </div>
         """
 
         body_text = (
-            f"SUPPLY CHAIN RISK ALERT — {risk_severity.upper()}\n\n"
+            f"SUPPLY CHAIN RISK ALERT - {risk_severity.upper()}\n\n"
             f"{risk_headline}\n"
             f"Severity: {risk_severity}\n"
             f"{'Supplier: ' + supplier if supplier else ''}\n"
             f"{'Type: ' + disruption_type if disruption_type else ''}\n\n"
-            f"{'Recommendations:\\n' + chr(10).join('- ' + r for r in recommendations) if recommendations else ''}"
+            f"{'Recommendations:\n' + chr(10).join('- ' + r for r in recommendations) if recommendations else ''}"
         )
 
+        prefix = f"{subject_prefix} " if subject_prefix else ""
         return self.send_email(EmailRequest(
             to=to,
-            subject=f"[{risk_severity.upper()}] Supply Chain Alert: {risk_headline[:80]}",
+            subject=f"{prefix}[{risk_severity.upper()}] Supply Chain Alert: {risk_headline[:80]}",
             body_html=body_html,
             body_text=body_text,
         ))
 
     def send_playbook_notification(
         self,
-        to: list[str],
         playbook_name: str,
         node_name: str,
         actions: list[str],
         risk_score: float,
+        to: list[str] | None = None,
     ) -> EmailResult:
         """Send a notification when a playbook is triggered.
 
-        Args:
-            to: Recipient email addresses.
-            playbook_name: Name of the triggered playbook.
-            node_name: Affected supply chain node.
-            actions: List of actions the playbook will execute.
-            risk_score: The risk score that triggered the playbook.
+        Auto-routes to operations team if no recipients specified.
         """
+        recipients = to or self.get_recipients_for_category(AlertCategory.OPERATIONS)
+        if not recipients:
+            return EmailResult(success=False, error="No operations recipients configured")
+
         actions_html = "".join(f"<li>{a}</li>" for a in actions)
 
         body_html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: #7c3aed; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
-                <h2 style="margin: 0;">⚡ Playbook Triggered</h2>
+                <h2 style="margin: 0;">&#9889; Playbook Triggered</h2>
             </div>
             <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
                 <p style="font-size: 16px; margin-top: 0;"><strong>{playbook_name}</strong> was automatically triggered.</p>
@@ -229,44 +404,38 @@ class EmailService:
         )
 
         return self.send_email(EmailRequest(
-            to=to,
-            subject=f"[Playbook] {playbook_name} triggered for {node_name}",
+            to=recipients,
+            subject=f"[OPERATIONS] [Playbook] {playbook_name} triggered for {node_name}",
             body_html=body_html,
             body_text=body_text,
         ))
 
     def send_shipment_delay_alert(
         self,
-        to: list[str],
         shipment_id: str,
         supplier: str,
         material: str,
         origin: str,
         destination: str,
         delay_reason: str = "",
+        to: list[str] | None = None,
     ) -> EmailResult:
-        """Send an alert when a shipment is delayed.
+        """Send an alert when a shipment is delayed. Auto-routes to ops team."""
+        recipients = to or self.get_recipients_for_category(AlertCategory.OPERATIONS)
+        if not recipients:
+            return EmailResult(success=False, error="No operations recipients configured")
 
-        Args:
-            to: Recipient email addresses.
-            shipment_id: The shipment identifier.
-            supplier: Supplier name.
-            material: Material being shipped.
-            origin: Origin location.
-            destination: Destination location.
-            delay_reason: Reason for the delay if known.
-        """
         body_html = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <div style="background: #ea580c; color: white; padding: 16px 24px; border-radius: 8px 8px 0 0;">
-                <h2 style="margin: 0;">🚢 Shipment Delay Alert</h2>
+                <h2 style="margin: 0;">&#128674; Shipment Delay Alert</h2>
             </div>
             <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
                 <p style="font-size: 16px; margin-top: 0;">Shipment <strong>{shipment_id}</strong> has been delayed.</p>
                 <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
                     <tr><td style="padding: 8px 0; color: #6b7280;">Supplier</td><td style="padding: 8px 0;">{supplier}</td></tr>
                     <tr><td style="padding: 8px 0; color: #6b7280;">Material</td><td style="padding: 8px 0;">{material}</td></tr>
-                    <tr><td style="padding: 8px 0; color: #6b7280;">Route</td><td style="padding: 8px 0;">{origin} → {destination}</td></tr>
+                    <tr><td style="padding: 8px 0; color: #6b7280;">Route</td><td style="padding: 8px 0;">{origin} &rarr; {destination}</td></tr>
                     {"<tr><td style='padding: 8px 0; color: #6b7280;'>Reason</td><td style='padding: 8px 0;'>" + delay_reason + "</td></tr>" if delay_reason else ""}
                 </table>
                 <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
@@ -280,13 +449,13 @@ class EmailService:
             f"Shipment: {shipment_id}\n"
             f"Supplier: {supplier}\n"
             f"Material: {material}\n"
-            f"Route: {origin} → {destination}\n"
+            f"Route: {origin} -> {destination}\n"
             f"{'Reason: ' + delay_reason if delay_reason else ''}"
         )
 
         return self.send_email(EmailRequest(
-            to=to,
-            subject=f"[Delay] Shipment {shipment_id} from {supplier} delayed",
+            to=recipients,
+            subject=f"[OPERATIONS] [Delay] Shipment {shipment_id} from {supplier} delayed",
             body_html=body_html,
             body_text=body_text,
         ))

@@ -29,6 +29,11 @@ class Settings(BaseModel):
     ses_sender_email: str = os.getenv("SES_SENDER_EMAIL", "")
     ses_region: str | None = os.getenv("SES_REGION") or None
     ses_alert_recipients: str = os.getenv("SES_ALERT_RECIPIENTS", "")
+    # Role-based recipient lists (comma-separated emails)
+    ses_recipients_operations: str = os.getenv("SES_RECIPIENTS_OPERATIONS", "")
+    ses_recipients_finance: str = os.getenv("SES_RECIPIENTS_FINANCE", "")
+    ses_recipients_analyst: str = os.getenv("SES_RECIPIENTS_ANALYST", "")
+    ses_recipients_executive: str = os.getenv("SES_RECIPIENTS_EXECUTIVE", "")
 
 
 @lru_cache(maxsize=1)

@@ -1033,7 +1033,7 @@ class SendEmailRequest(BaseModel):
 
 
 class SendRiskAlertRequest(BaseModel):
-    to: list[str] | None = None  # If None, uses SES_ALERT_RECIPIENTS
+    to: list[str] | None = None  # If None, auto-routes based on disruption_type + severity
     risk_severity: str
     risk_headline: str
     supplier: str = ""
@@ -1070,45 +1070,66 @@ def send_email(req: SendEmailRequest) -> dict:
 
 @router.post("/email/risk-alert")
 def send_risk_alert_email(req: SendRiskAlertRequest) -> dict:
-    """Send a risk alert email to stakeholders.
+    """Send a risk alert with automatic role-based routing.
 
-    If no recipients are specified, uses the SES_ALERT_RECIPIENTS env var.
+    Routes to the right team based on disruption_type:
+    - shipping_delay, port_congestion, weather -> Operations team
+    - tariff_change, cost_increase -> Finance/CFO team
+    - geopolitical, trade_policy, supplier_risk -> Analyst team
+    - supplier_bankruptcy, sanctions, force_majeure -> Executive team
 
-    Args:
-        req: Risk alert details.
+    Critical severity always escalates to executive + operations.
 
-    Returns:
-        Send result with message ID.
+    If explicit 'to' is provided, skips auto-routing.
     """
     from app.services.email_service import EmailService
-    from app.core.config import get_settings
 
     service = EmailService()
-    settings = get_settings()
-
-    recipients = req.to
-    if not recipients:
-        raw = settings.ses_alert_recipients
-        recipients = [e.strip() for e in raw.split(",") if e.strip()] if raw else []
-
-    if not recipients:
-        raise HTTPException(
-            status_code=400,
-            detail="No recipients specified and SES_ALERT_RECIPIENTS not configured.",
-        )
-
-    result = service.send_risk_alert(
-        to=recipients,
+    result = service.send_routed_alert(
         risk_severity=req.risk_severity,
         risk_headline=req.risk_headline,
         supplier=req.supplier,
         disruption_type=req.disruption_type,
         recommendations=req.recommendations,
+        explicit_recipients=req.to,
     )
 
     if not result.success:
         raise HTTPException(status_code=500, detail=result.error)
-    return {"message_id": result.message_id, "status": "sent"}
+    return {
+        "message_id": result.message_id,
+        "status": "sent",
+        "category": result.category,
+        "recipients_notified": result.recipients_notified,
+    }
+
+
+@router.get("/email/routing-rules")
+def get_email_routing_rules() -> dict:
+    """Return the current email routing configuration.
+
+    Shows which disruption types route to which teams,
+    and the configured recipients per role.
+    """
+    from app.services.email_service import (
+        EmailService, AlertCategory, DISRUPTION_CATEGORY_MAP, SEVERITY_ESCALATION,
+    )
+
+    service = EmailService()
+    routing = {}
+    for category in AlertCategory:
+        recipients = service.get_recipients_for_category(category)
+        routing[category.value] = {
+            "recipients": recipients,
+            "disruption_types": [
+                k for k, v in DISRUPTION_CATEGORY_MAP.items() if v == category
+            ],
+        }
+
+    return {
+        "routing": routing,
+        "severity_escalation": {k: [c.value for c in v] for k, v in SEVERITY_ESCALATION.items()},
+    }
 
 
 @router.post("/email/test")
