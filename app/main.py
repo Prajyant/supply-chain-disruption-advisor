@@ -43,6 +43,17 @@ async def lifespan(app: FastAPI):
     worker_manager.register_worker("ingestion", IngestionWorker(interval_seconds=900, ingestion_service=ingestion_svc, graph_service=graph_svc))  # 15 min
     worker_manager.register_worker("risk", RiskWorker(interval_seconds=1800, risk_service=risk_svc))  # 30 min
     worker_manager.register_worker("propagation", PropagationWorker(interval_seconds=60, graph_service=graph_svc))  # 1 min
+
+    # Run initial data ingestion immediately so chat works from the start
+    logger.info("Running initial data ingestion...")
+    ingestion_worker = worker_manager.workers.get("ingestion")
+    if ingestion_worker:
+        try:
+            await ingestion_worker.run()
+            logger.info("Initial data ingestion complete — chat advisor ready")
+        except Exception as exc:
+            logger.warning("Initial ingestion failed (will retry on schedule): %s", exc)
+
     await worker_manager.start_all()
     logger.info("Background workers started")
 

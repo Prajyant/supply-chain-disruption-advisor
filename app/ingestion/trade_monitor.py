@@ -95,10 +95,16 @@ def fetch_trade_policy_events(limit: int = 30) -> list[dict[str, Any]]:
     """Fetch trade-policy news and normalize likely supply-chain events.
 
     Falls back to realistic synthetic data when live feeds are unreachable.
+    Fetches all feeds in parallel for speed.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=len(TRADE_POLICY_FEEDS)) as executor:
+        results = list(executor.map(fetch_trade_feed, TRADE_POLICY_FEEDS))
+
     items: list[dict[str, Any]] = []
-    for feed_url in TRADE_POLICY_FEEDS:
-        items.extend(fetch_trade_feed(feed_url))
+    for result in results:
+        items.extend(result)
         if len(items) >= limit:
             break
 
@@ -122,7 +128,7 @@ def fetch_trade_feed(feed_url: str) -> list[dict[str, Any]]:
         response = requests.get(
             feed_url,
             headers={"User-Agent": "Mozilla/5.0 (SupplyChainAdvisor/1.0)"},
-            timeout=15,
+            timeout=8,
         )
         response.raise_for_status()
         items = parse_feed_items(response.content, limit=15)

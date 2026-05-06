@@ -242,3 +242,31 @@ export interface PlaybookExecution {
 export interface PlaybookWithStats extends Playbook {
   recent_executions?: PlaybookExecution[];
 }
+
+// ==================== Resolution Package Types ====================
+
+export interface ResolutionEmail {
+  to: string;
+  subject: string;
+  body: string;
+  priority: 'urgent' | 'normal';
+  send_within_hours: number;
+}
+
+export interface CFOSummary {
+  headline: string;
+  exposure_usd: number;
+  recommended_action: string;
+  decision_deadline: string;
+  key_facts: string[];
+}
+
+export interface ResolutionPackage {
+  shipment_id: string;
+  risk_level: string;
+  generated_at: string;
+  carrier_email: ResolutionEmail;
+  alternate_supplier_email: ResolutionEmail;
+  internal_escalation_email: ResolutionEmail;
+  cfo_summary: CFOSummary;
+}

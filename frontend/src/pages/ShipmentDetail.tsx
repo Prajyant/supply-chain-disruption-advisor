@@ -25,11 +25,14 @@ import {
 } from 'lucide-react';
 import { agentApi, shipmentApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
-import { EvidenceEvent, ShipmentInput, StrandsShipmentRiskResponse } from '../types';
+import { getPreloadedAnalysis } from '../services/shipmentPreloader';
+import { ResolutionPackageComponent } from '../components/ResolutionPackage';
+import { EvidenceEvent, ShipmentInput, StrandsShipmentRiskResponse, ResolutionPackage } from '../types';
 import { VesselMap } from '../components/VesselMap';
 import { DebugPanel } from '../components/DebugPanel';
 import { LiveWeatherBanner } from '../components/LiveWeatherBanner';
 import { getPositionWeather, type PositionWeatherData } from '../services/weatherService';
+import { useState } from 'react';
 
 type StrandsStatus = {
   agent: string;
@@ -66,6 +69,9 @@ export function ShipmentDetail() {
   const navigate = useNavigate();
   const { shipmentId = '' } = useParams();
 
+  const [resolutionPackage, setResolutionPackage] = useState<ResolutionPackage | null>(null);
+  const [isGeneratingPackage, setIsGeneratingPackage] = useState(false);
+
   const shipmentsQuery = useQuery({
     queryKey: ['demo-shipments'],
     queryFn: loadDemoShipments,
@@ -76,13 +82,19 @@ export function ShipmentDetail() {
   const analysisQuery = useQuery({
     queryKey: ['shipment-analysis', shipmentId],
     enabled: Boolean(shipment),
-    queryFn: () =>
-      shipmentApi
-        .runStrandsRisk(
-          shipment as ShipmentInput,
-          `Explain the concrete causes of risk for shipment ${shipmentId} from ${shipment?.origin} to ${shipment?.destination}.`
-        )
-        .then((res) => res.data as StrandsShipmentRiskResponse),
+    queryFn: async () => {
+      // Try preloaded cache first (instant if available)
+      const preloaded = await getPreloadedAnalysis(shipmentId);
+      if (preloaded) {
+        return preloaded as StrandsShipmentRiskResponse;
+      }
+      // Fall back to live analysis
+      const res = await shipmentApi.runStrandsRisk(
+        shipment as ShipmentInput,
+        `Explain the concrete causes of risk for shipment ${shipmentId} from ${shipment?.origin} to ${shipment?.destination}.`
+      );
+      return res.data as StrandsShipmentRiskResponse;
+    },
   });
 
   const strandsStatusQuery = useQuery({
@@ -220,14 +232,39 @@ export function ShipmentDetail() {
             </div>
           </div>
 
-          <button
-            onClick={() => analysisQuery.refetch()}
-            disabled={analysisQuery.isFetching}
-            className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary-400/30 bg-primary-500/20 px-4 py-3 text-sm font-semibold text-primary-100 shadow-lg shadow-primary-950/30 transition-all hover:bg-primary-500/30 disabled:opacity-50"
-          >
-            {analysisQuery.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            Refresh analysis
-          </button>
+          <div className="flex flex-col gap-2">
+            {(['high', 'critical'].includes(analysis?.result?.risk_level?.toLowerCase() || '')) && (
+              <button
+                onClick={async () => {
+                  setIsGeneratingPackage(true);
+                  try {
+                    const res = await shipmentApi.generateResolutionPackage(shipment);
+                    setResolutionPackage(res.data);
+                    setTimeout(() => {
+                      document.getElementById('resolution-package-container')?.scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setIsGeneratingPackage(false);
+                  }
+                }}
+                disabled={isGeneratingPackage}
+                className="inline-flex w-fit items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/20 px-4 py-3 text-sm font-bold text-red-200 shadow-lg shadow-red-950/30 transition-all hover:bg-red-500/30 disabled:opacity-50"
+              >
+                {isGeneratingPackage ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>🚨</span>}
+                {isGeneratingPackage ? 'AI is preparing your resolution package...' : 'Generate Resolution Package'}
+              </button>
+            )}
+            <button
+              onClick={() => analysisQuery.refetch()}
+              disabled={analysisQuery.isFetching}
+              className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary-400/30 bg-primary-500/20 px-4 py-3 text-sm font-semibold text-primary-100 shadow-lg shadow-primary-950/30 transition-all hover:bg-primary-500/30 disabled:opacity-50 self-end"
+            >
+              {analysisQuery.isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              Refresh analysis
+            </button>
+          </div>
         </div>
       </section>
 
@@ -247,6 +284,10 @@ export function ShipmentDetail() {
             <FinancialImpactPanel result={analysis} />
             <CompactRiskSummary result={analysis} />
             <KeyRiskDrivers result={analysis} positionWeather={positionWeatherQuery.data ?? undefined} />
+            
+            <div id="resolution-package-container">
+              {resolutionPackage && <ResolutionPackageComponent data={resolutionPackage} />}
+            </div>
           </div>
 
           {!isGround && (
@@ -594,9 +635,13 @@ function buildProcessorSteps(
       icon: Bot,
     },
     {
-      id: 'gemini',
-      label: 'Gemini',
-      detail: result ? result.result.reasoning_method : 'Waiting for mitigation reasoning',
+      id: 'bedrock',
+      label: 'Bedrock',
+      detail: result
+        ? result.result.reasoning_method.includes('fallback')
+          ? `Fallback: ${result.result.reasoning_method}`
+          : `Claude Sonnet 4 · ${result.result.reasoning_method}`
+        : 'Waiting for mitigation reasoning',
       status: status(Boolean(result)),
       icon: Bot,
     },
@@ -1088,6 +1133,12 @@ function CompactRiskSummary({ result }: { result: StrandsShipmentRiskResponse })
                 <MetricPill label="Method" value={advice.scoring_method.split('_').slice(0, 2).join(' ')} />
                 <MetricPill label="Actions" value={String(advice.recommended_actions.length)} />
               </div>
+              {advice.reasoning_method && !advice.reasoning_method.includes('fallback') && (
+                <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300">
+                  <span className="font-medium">AI Reasoning</span>
+                  <span className="text-cyan-400">{advice.reasoning_method}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

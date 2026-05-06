@@ -18,9 +18,10 @@ from app.models.schemas import (
     ShipmentRiskAdviceResponse,
     StrandsShipmentRiskRequest,
     StrandsShipmentRiskResponse,
+    ResolutionPackage,
 )
 from app.services.advisor_service import AdvisorService
-from app.services.gemini_advice_service import GeminiAdviceService
+from app.services.bedrock_advice_service import BedrockAdviceService
 from app.services.graph_service import GraphService
 from app.services.ingestion_service import IngestionService
 from app.services.risk_service import RiskService
@@ -64,8 +65,8 @@ def get_shipment_risk_service() -> ShipmentRiskService:
     return ShipmentRiskService()
 
 @lru_cache(maxsize=1)
-def get_gemini_advice_service() -> GeminiAdviceService:
-    return GeminiAdviceService()
+def get_bedrock_advice_service() -> BedrockAdviceService:
+    return BedrockAdviceService()
 
 @lru_cache(maxsize=1)
 def get_shipment_tracker() -> ShipmentTracker:
@@ -88,24 +89,8 @@ def get_strands_orchestrator_service() -> StrandsOrchestratorService:
     return StrandsOrchestratorService()
 
 @lru_cache(maxsize=1)
-def get_advisor_service(
-    ingestion_svc: IngestionService = Depends(get_ingestion_service),
-    risk_svc: RiskService = Depends(get_risk_service),
-    chat_svc: ChatService = Depends(get_chat_service),
-    graph_svc: GraphService = Depends(get_graph_service),
-    shipment_tracker: ShipmentTracker = Depends(get_shipment_tracker),
-    playbook_engine: PlaybookEngine = Depends(get_playbook_engine),
-    feedback_svc: FeedbackService = Depends(get_feedback_service),
-) -> AdvisorService:
-    return AdvisorService(
-        ingestion_service=ingestion_svc,
-        risk_service=risk_svc,
-        chat_service=chat_svc,
-        graph_service=graph_svc,
-        shipment_tracker=shipment_tracker,
-        playbook_engine=playbook_engine,
-        feedback_service=feedback_svc,
-    )
+def get_advisor_service() -> AdvisorService:
+    return AdvisorService()
 
 security = HTTPBearer(auto_error=False)
 
@@ -268,19 +253,59 @@ def score_shipment_risk(
 def advise_shipment_risk(
     req: ShipmentRiskAdviceRequest,
     shipment_risk_service: ShipmentRiskService = Depends(get_shipment_risk_service),
-    gemini_advice_service: GeminiAdviceService = Depends(get_gemini_advice_service)
+    bedrock_advice_service: BedrockAdviceService = Depends(get_bedrock_advice_service)
 ) -> ShipmentRiskAdviceResponse:
-    """Score a shipment and return Gemini-formatted mitigation advice."""
+    """Score a shipment and return Bedrock-formatted mitigation advice."""
     score_result = shipment_risk_service.score_shipment(
         shipment=req.shipment,
         intelligence_events=req.intelligence_events,
         use_live_intelligence=req.use_live_intelligence,
     )
-    return gemini_advice_service.build_advice(
+    return bedrock_advice_service.build_advice(
         shipment=req.shipment,
         score_result=score_result,
         question=req.question,
     )
+
+
+def get_resolution_service() -> "ResolutionService":
+    from app.services.resolution_service import ResolutionService
+    return ResolutionService()
+
+
+@router.post("/shipments/resolution-package", response_model=ResolutionPackage)
+def generate_resolution_package(
+    req: ShipmentRiskAdviceRequest,
+    shipment_risk_service: ShipmentRiskService = Depends(get_shipment_risk_service),
+    bedrock_advice_service: BedrockAdviceService = Depends(get_bedrock_advice_service),
+    resolution_service: "ResolutionService" = Depends(get_resolution_service)
+) -> ResolutionPackage:
+    from app.services.resolution_service import calculate_financial_impact
+
+    # 1. Score shipment
+    score_result = shipment_risk_service.score_shipment(
+        shipment=req.shipment,
+        intelligence_events=req.intelligence_events,
+        use_live_intelligence=req.use_live_intelligence,
+    )
+    
+    # 2. Build advice using Bedrock
+    advice_result = bedrock_advice_service.build_advice(
+        shipment=req.shipment,
+        score_result=score_result,
+        question=req.question,
+    )
+    
+    # 3. Calculate financial impact
+    financial_impact = calculate_financial_impact(req.shipment, score_result)
+    
+    # 4. Generate resolution package
+    return resolution_service.generate_resolution_package(
+        shipment=req.shipment,
+        score_result=score_result,
+        financial_impact=financial_impact
+    )
+
 
 
 @router.post("/agents/strands/shipment-risk", response_model=StrandsShipmentRiskResponse)
@@ -495,6 +520,110 @@ def get_shipments_for_node(
         List of shipment dictionaries for this node
     """
     return advisor_service.get_shipments_for_node(node_id)
+
+
+# ==================== SHIPMENT PRELOAD ENDPOINTS ====================
+
+# In-memory cache for preloaded shipment analyses
+_shipment_analysis_cache: dict[str, dict] = {}
+_preload_in_progress: bool = False
+
+
+@router.post("/shipments/preload")
+async def preload_shipment_analyses(
+    shipments: list[dict],
+    strands_orchestrator_service: StrandsOrchestratorService = Depends(get_strands_orchestrator_service),
+) -> dict:
+    """Preload risk analysis for all shipments in the background.
+
+    Called once on app load so that when a user opens a shipment detail page,
+    the analysis is already cached and loads instantly.
+
+    Args:
+        shipments: List of shipment dicts from the frontend CSV
+
+    Returns:
+        Status of the preload operation
+    """
+    global _preload_in_progress
+
+    if _preload_in_progress:
+        return {"status": "already_running", "cached": len(_shipment_analysis_cache)}
+
+    _preload_in_progress = True
+
+    async def _run_preload():
+        global _preload_in_progress
+        try:
+            for shipment_data in shipments:
+                shipment_id = shipment_data.get("shipment_id", "")
+                if shipment_id in _shipment_analysis_cache:
+                    continue
+                try:
+                    from app.models.schemas import ShipmentInput
+                    shipment_input = ShipmentInput(**shipment_data)
+                    req = StrandsShipmentRiskRequest(
+                        shipment=shipment_input,
+                        question=f"Analyze risk for shipment {shipment_id}",
+                        use_live_intelligence=True,
+                        prefer_strands_sdk=True,
+                    )
+                    result = await asyncio.to_thread(
+                        strands_orchestrator_service.run_shipment_risk_workflow, req
+                    )
+                    _shipment_analysis_cache[shipment_id] = result.model_dump()
+                except Exception as exc:
+                    logger.warning("Preload failed for shipment %s: %s", shipment_id, exc)
+            logger.info("Shipment preload complete: %d analyses cached", len(_shipment_analysis_cache))
+        finally:
+            _preload_in_progress = False
+
+    asyncio.create_task(_run_preload())
+    return {"status": "started", "total_shipments": len(shipments), "already_cached": len(_shipment_analysis_cache)}
+
+
+@router.get("/shipments/{shipment_id}/preloaded")
+async def get_preloaded_analysis(shipment_id: str) -> dict:
+    """Get a preloaded shipment analysis from cache.
+
+    Returns the cached analysis if available, or a 404 if not yet preloaded.
+    The frontend can fall back to the live analysis endpoint if this returns 404.
+    """
+    if shipment_id in _shipment_analysis_cache:
+        return _shipment_analysis_cache[shipment_id]
+    raise HTTPException(status_code=404, detail="Analysis not yet preloaded")
+
+
+@router.get("/shipments/preload/status")
+async def preload_status() -> dict:
+    """Check the status of the preload operation."""
+    return {
+        "in_progress": _preload_in_progress,
+        "cached_count": len(_shipment_analysis_cache),
+        "cached_ids": list(_shipment_analysis_cache.keys()),
+    }
+
+
+# ==================== CHAT CONTEXT ENDPOINT ====================
+
+
+@router.get("/chat/context")
+def get_chat_context(
+    chat_service: ChatService = Depends(get_chat_service),
+) -> dict:
+    """Return the current global context available to the chat advisor.
+
+    Useful for the frontend to show what the advisor knows about.
+    """
+    ctx = chat_service.get_global_context()
+    return {
+        "has_context": bool(ctx),
+        "risks_count": len(ctx.get("risks", [])),
+        "shipments_count": len(ctx.get("shipments", [])),
+        "weather_events_count": len(ctx.get("weather_events", [])),
+        "trade_events_count": len(ctx.get("trade_events", [])),
+        "network_summary": ctx.get("network_summary", {}),
+    }
 
 
 # ==================== PLAYBOOK ENDPOINTS (Phase 3) ====================

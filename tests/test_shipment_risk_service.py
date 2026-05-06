@@ -1,5 +1,5 @@
 from app.models.schemas import ShipmentInput
-from app.services.gemini_advice_service import classify_gemini_error
+from app.services.bedrock_advice_service import classify_bedrock_error
 from app.services.shipment_risk_service import extract_shipment_features
 
 
@@ -90,7 +90,7 @@ def test_route_relevant_external_context_sets_scoring_features() -> None:
     }
 
 
-def test_classifies_gemini_quota_failure() -> None:
-    error = Exception("429 RESOURCE_EXHAUSTED quota exceeded for generate_content")
+def test_classifies_bedrock_throttle_failure() -> None:
+    error = Exception("ThrottlingException: Too many requests")
 
-    assert classify_gemini_error(error) == "gemini_quota_or_rate_limit"
+    assert classify_bedrock_error(error) == "bedrock_throttled"

@@ -2,12 +2,35 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Session with connection pooling for better reliability
+_session: requests.Session | None = None
+
+
+def _get_session() -> requests.Session:
+    """Get or create a reusable requests session with connection pooling."""
+    global _session
+    if _session is None:
+        _session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(
+            max_retries=requests.adapters.Retry(
+                total=2,
+                backoff_factor=0.5,
+                status_forcelist=[429, 500, 502, 503, 504],
+            ),
+            pool_connections=5,
+            pool_maxsize=10,
+        )
+        _session.mount("https://", adapter)
+        _session.mount("http://", adapter)
+    return _session
 
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_MARINE_URL = "https://marine-api.open-meteo.com/v1/marine"
@@ -275,35 +298,86 @@ def _fallback_weather_events() -> list[dict[str, Any]]:
 
 
 def fetch_weather_events(limit: int = 20) -> list[dict[str, Any]]:
-    """Fetch current weather for major logistics nodes and return normalized events.
+    """Fetch current weather for major logistics nodes.
 
-    Falls back to realistic synthetic data when live feeds are unreachable.
+    Uses Open-Meteo's batch API (single request for all locations) as the
+    primary method. Falls back to individual requests, then to synthetic data.
+
+    Only returns events for locations with notable (medium+) weather conditions.
+    If the API is reachable but weather is calm everywhere, returns an empty list
+    (this is correct — no disruptions detected).
     """
+    locations = LOGISTICS_WEATHER_WATCHLIST[:limit]
     events: list[dict[str, Any]] = []
+    api_reachable = False
 
-    for idx, location in enumerate(LOGISTICS_WEATHER_WATCHLIST[:limit]):
-        try:
-            current = fetch_open_meteo_current_weather(
-                latitude=location["latitude"],
-                longitude=location["longitude"],
-            )
-            event = normalize_weather_event(location, current, idx)
+    # Strategy 1: Batch request (single HTTP call for all locations)
+    try:
+        payloads = fetch_open_meteo_batch(locations)
+        api_reachable = True
+        for idx, (location, payload) in enumerate(zip(locations, payloads)):
+            event = normalize_weather_event(location, payload, idx)
             if event:
                 events.append(event)
-        except Exception as exc:
-            logger.warning("Weather fetch failed for %s: %s", location["name"], exc)
+        logger.info(
+            "Fetched weather for %d locations (batch mode), %d with notable conditions",
+            len(payloads), len(events),
+        )
+        return events
+    except Exception as exc:
+        logger.warning("Batch weather fetch failed: %s — trying individual requests", exc)
 
-    if not events:
-        logger.info("All live weather feeds failed — using fallback data")
-        events = _fallback_weather_events()[:limit]
+    # Strategy 2: Individual requests with connection pooling
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    logger.info("Fetched %s weather intelligence events", len(events))
-    return events
+    def _fetch_one(idx_location):
+        idx, location = idx_location
+        for attempt in range(2):
+            try:
+                current = fetch_open_meteo_current_weather(
+                    latitude=location["latitude"],
+                    longitude=location["longitude"],
+                )
+                return normalize_weather_event(location, current, idx)
+            except Exception:
+                if attempt == 0:
+                    time.sleep(0.5)
+                    continue
+                raise
+
+    successes = 0
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {
+            executor.submit(_fetch_one, (idx, loc)): loc["name"]
+            for idx, loc in enumerate(locations)
+        }
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                event = future.result(timeout=15)
+                successes += 1
+                if event:
+                    events.append(event)
+            except Exception as exc:
+                logger.warning("Weather fetch failed for %s: %s", name, exc)
+
+    if successes > 0:
+        api_reachable = True
+        logger.info(
+            "Fetched weather for %d/%d locations (individual mode), %d with notable conditions",
+            successes, len(locations), len(events),
+        )
+        return events
+
+    # Strategy 3: Fallback synthetic data (only when API is truly unreachable)
+    logger.info("All live weather feeds failed — using fallback data")
+    return _fallback_weather_events()[:limit]
 
 
 def fetch_open_meteo_current_weather(latitude: float, longitude: float) -> dict[str, Any]:
     """Fetch current weather from Open-Meteo for one coordinate."""
-    response = requests.get(
+    session = _get_session()
+    response = session.get(
         OPEN_METEO_FORECAST_URL,
         params={
             "latitude": latitude,
@@ -320,15 +394,57 @@ def fetch_open_meteo_current_weather(latitude: float, longitude: float) -> dict[
             ),
             "timezone": "UTC",
         },
-        timeout=15,
+        timeout=10,
     )
     response.raise_for_status()
     return response.json()
 
 
+def fetch_open_meteo_batch(locations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fetch weather for multiple locations in a single Open-Meteo API call.
+
+    Open-Meteo supports comma-separated lat/lon values for batch requests.
+    This is more reliable than making 10 separate requests.
+    """
+    if not locations:
+        return []
+
+    latitudes = ",".join(str(loc["latitude"]) for loc in locations)
+    longitudes = ",".join(str(loc["longitude"]) for loc in locations)
+
+    session = _get_session()
+    response = session.get(
+        OPEN_METEO_FORECAST_URL,
+        params={
+            "latitude": latitudes,
+            "longitude": longitudes,
+            "current": ",".join(
+                [
+                    "temperature_2m",
+                    "precipitation",
+                    "rain",
+                    "weather_code",
+                    "wind_speed_10m",
+                    "wind_gusts_10m",
+                ]
+            ),
+            "timezone": "UTC",
+        },
+        timeout=15,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    # Single location returns a dict; multiple returns a list
+    if isinstance(data, dict):
+        return [data]
+    return data
+
+
 def fetch_open_meteo_marine_weather(latitude: float, longitude: float) -> dict[str, Any]:
     """Fetch current marine weather from Open-Meteo for one coordinate."""
-    response = requests.get(
+    session = _get_session()
+    response = session.get(
         OPEN_METEO_MARINE_URL,
         params={
             "latitude": latitude,
@@ -346,7 +462,7 @@ def fetch_open_meteo_marine_weather(latitude: float, longitude: float) -> dict[s
             ),
             "timezone": "UTC",
         },
-        timeout=15,
+        timeout=10,
     )
     response.raise_for_status()
     return response.json()
@@ -510,6 +626,8 @@ def fetch_weather_for_points(points: list[tuple[float, float]]) -> list[dict]:
     Also includes any LOGISTICS_WEATHER_WATCHLIST nodes within 3 degrees of
     any input point. Results are deduplicated by location name.
 
+    Uses batch API for efficiency and reliability.
+
     Args:
         points: List of (latitude, longitude) tuples.
 
@@ -558,19 +676,15 @@ def fetch_weather_for_points(points: list[tuple[float, float]]) -> list[dict]:
             "severity": severity,
         }
 
-    # Fetch weather for each explicitly requested point
-    for lat, lon in points:
-        location_name = f"Point {lat:.2f},{lon:.2f}"
-        try:
-            payload = fetch_open_meteo_current_weather(latitude=lat, longitude=lon)
-            entry = _build_weather_dict(location_name, lat, lon, payload)
-            if location_name not in seen_names:
-                seen_names.add(location_name)
-                results.append(entry)
-        except Exception as exc:
-            logger.warning("fetch_weather_for_points: failed for (%s, %s): %s", lat, lon, exc)
+    # Collect all locations to fetch (requested points + nearby watchlist nodes)
+    all_fetch_items: list[tuple[str, float, float]] = []
 
-    # Include nearby watchlist nodes (within 3 degrees of any input point)
+    for lat, lon in points:
+        name = f"Point {lat:.2f},{lon:.2f}"
+        if name not in seen_names:
+            seen_names.add(name)
+            all_fetch_items.append((name, lat, lon))
+
     for node in LOGISTICS_WEATHER_WATCHLIST:
         node_name: str = node["name"]
         if node_name in seen_names:
@@ -581,15 +695,30 @@ def fetch_weather_for_points(points: list[tuple[float, float]]) -> list[dict]:
             abs(node_lat - pt_lat) <= 3.0 and abs(node_lon - pt_lon) <= 3.0
             for pt_lat, pt_lon in points
         )
-        if not nearby:
-            continue
-        try:
-            payload = fetch_open_meteo_current_weather(latitude=node_lat, longitude=node_lon)
-            entry = _build_weather_dict(node_name, node_lat, node_lon, payload)
+        if nearby:
             seen_names.add(node_name)
+            all_fetch_items.append((node_name, node_lat, node_lon))
+
+    # Try batch fetch first
+    try:
+        batch_locations = [{"latitude": lat, "longitude": lon} for _, lat, lon in all_fetch_items]
+        payloads = fetch_open_meteo_batch(batch_locations)
+        for (name, lat, lon), payload in zip(all_fetch_items, payloads):
+            entry = _build_weather_dict(name, lat, lon, payload)
+            results.append(entry)
+        if results:
+            return results
+    except Exception as exc:
+        logger.warning("Batch route weather fetch failed: %s — trying individual", exc)
+
+    # Fallback: individual fetches
+    for name, lat, lon in all_fetch_items:
+        try:
+            payload = fetch_open_meteo_current_weather(latitude=lat, longitude=lon)
+            entry = _build_weather_dict(name, lat, lon, payload)
             results.append(entry)
         except Exception as exc:
-            logger.warning("fetch_weather_for_points: failed for watchlist node %s: %s", node_name, exc)
+            logger.warning("fetch_weather_for_points: failed for %s: %s", name, exc)
 
     # If all live fetches failed, return synthetic route weather so the UI has data
     if not results:

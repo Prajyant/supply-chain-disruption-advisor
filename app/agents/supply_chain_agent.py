@@ -12,7 +12,7 @@ from app.ingestion.worldmonitor import (
     normalize_news_event,
 )
 from app.models.schemas import ShipmentInput, ShipmentRiskAdviceResponse
-from app.services.gemini_advice_service import GeminiAdviceService
+from app.services.bedrock_advice_service import BedrockAdviceService
 from app.services.shipment_risk_service import ShipmentRiskService
 
 try:
@@ -35,7 +35,7 @@ Use tools in this order:
 5. validate_risk_response before returning final output.
 
 Never invent a risk score. XGBoost or the scoring tool owns numeric scoring.
-Gemini or the advice tool owns explanation and mitigation.
+Bedrock or the advice tool owns explanation and mitigation.
 Return structured JSON for the dashboard."""
 
 
@@ -92,9 +92,9 @@ def generate_shipment_advice(
     score_result: dict[str, Any],
     question: str | None = None,
 ) -> dict[str, Any]:
-    """Generate final shipment mitigation advice using Gemini with schema guardrails."""
+    """Generate final shipment mitigation advice using Bedrock with schema guardrails."""
     shipment_input = ShipmentInput(**shipment)
-    advice = GeminiAdviceService().build_advice(
+    advice = BedrockAdviceService().build_advice(
         shipment=shipment_input,
         score_result=score_result,
         question=question,

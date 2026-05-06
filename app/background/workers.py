@@ -176,8 +176,74 @@ class IngestionWorker(BackgroundWorker):
                 "Graph risk scoring: %d nodes scored, propagation updated %d nodes",
                 scored, len(prop_result.get("updated_nodes", [])),
             )
+
+            # --- Update global chat context ---
+            await self._update_chat_global_context(weather_events, trade_events)
+
         except Exception as e:
             logger.error(f"Risk analysis/mapping failed: {e}")
+
+    async def _update_chat_global_context(
+        self, weather_events: list, trade_events: list
+    ) -> None:
+        """Push latest system state into the ChatService global context.
+
+        This makes the chat advisor aware of all current risks, shipments,
+        weather, trade events, and network state — regardless of which page
+        the user is on.
+        """
+        try:
+            from app.services.chat_service import ChatService
+            from app.services.shipment_tracker import ShipmentTracker
+
+            chat_service = ChatService()
+            tracker = ShipmentTracker()
+
+            # Gather risks from the ingestion service
+            risks = []
+            try:
+                from app.services.risk_service import RiskService
+                risk_svc = RiskService()
+                reactive = risk_svc.get_risks()
+                predictions = risk_svc.get_predictions()
+                for pred in predictions:
+                    risks.append(pred.model_dump() if hasattr(pred, "model_dump") else pred)
+                for r in reactive:
+                    meta = r.get("metadata", {}) or {}
+                    if not meta.get("_news_context_only") and r.get("severity") != "low":
+                        risks.append(r)
+            except Exception:
+                pass
+
+            # Gather shipments
+            shipments = tracker.get_all_shipments()
+
+            # Network summary
+            network_summary = {}
+            if self.graph_service:
+                total_nodes = len(self.graph_service.graph.nodes)
+                at_risk = sum(
+                    1 for n in self.graph_service.graph.nodes.values()
+                    if n.direct_risk >= 0.5
+                )
+                network_summary = {
+                    "total_nodes": total_nodes,
+                    "at_risk_nodes": at_risk,
+                }
+
+            chat_service.update_global_context(
+                risks=risks,
+                shipments=shipments,
+                weather_events=weather_events,
+                trade_events=trade_events,
+                network_summary=network_summary,
+            )
+            logger.info(
+                "Chat global context updated: %d risks, %d shipments, %d weather, %d trade",
+                len(risks), len(shipments), len(weather_events), len(trade_events),
+            )
+        except Exception as e:
+            logger.error(f"Failed to update chat global context: {e}")
 
 
 from app.ingestion.worldmonitor import fetch_realtime_news

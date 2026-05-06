@@ -10,6 +10,9 @@ import { Settings } from './pages/Settings';
 import { ShipmentDetail } from './pages/ShipmentDetail';
 import { Login } from './pages/Login';
 import { Playbooks } from './pages/Playbooks';
+import { ViewModeProvider } from './context/ViewModeContext';
+import { GlobalChat } from './components/GlobalChat';
+import { triggerShipmentPreload } from './services/shipmentPreloader';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,6 +26,13 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const isHydrated = useAuthStore((state) => state.isHydrated);
+
+  // Trigger shipment preload once authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      triggerShipmentPreload();
+    }
+  }, [isAuthenticated]);
 
   if (!isHydrated) {
     return null;
@@ -40,26 +50,31 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Dashboard />} />
-            <Route path="shipments/:shipmentId" element={<ShipmentDetail />} />
-            <Route path="digital-twin" element={<DigitalTwin />} />
-            <Route path="chat" element={<Chat />} />
-            <Route path="playbooks" element={<Playbooks />} />
-            <Route path="settings" element={<Settings />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <ViewModeProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <>
+                    <Layout />
+                    <GlobalChat />
+                  </>
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Dashboard />} />
+              <Route path="shipments/:shipmentId" element={<ShipmentDetail />} />
+              <Route path="digital-twin" element={<DigitalTwin />} />
+              <Route path="chat" element={<Chat />} />
+              <Route path="playbooks" element={<Playbooks />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </ViewModeProvider>
     </QueryClientProvider>
   );
 }

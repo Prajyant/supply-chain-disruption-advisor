@@ -32,7 +32,7 @@ def fetch_rss_feed(feed_url: str) -> list[dict[str, Any]]:
         response = requests.get(
             feed_url,
             headers={"User-Agent": "Mozilla/5.0 (SupplyChainAdvisor/1.0)"},
-            timeout=15,
+            timeout=8,
         )
         response.raise_for_status()
         items = parse_feed_items(response.content, limit=15)
@@ -44,25 +44,28 @@ def fetch_rss_feed(feed_url: str) -> list[dict[str, Any]]:
 
 
 def fetch_supply_chain_news(limit: int = 50) -> list[dict[str, Any]]:
-    """Fetch real-time supply chain news from RSS feeds."""
+    """Fetch real-time supply chain news from RSS feeds in parallel."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=len(SUPPLY_CHAIN_FEEDS)) as executor:
+        results = list(executor.map(fetch_rss_feed, SUPPLY_CHAIN_FEEDS))
+
     all_items = []
-    for feed_url in SUPPLY_CHAIN_FEEDS:
-        items = fetch_rss_feed(feed_url)
-        all_items.extend(items)
-        if len(all_items) >= limit:
-            break
+    for result in results:
+        all_items.extend(result)
     return all_items[:limit]
 
 
 def fetch_global_disruption_news(limit: int = 50) -> list[dict[str, Any]]:
-    """Fetch global news — we send ALL of it to Gemini to decide relevance."""
+    """Fetch global news in parallel — Bedrock will decide relevance."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=len(GLOBAL_NEWS_FEEDS)) as executor:
+        results = list(executor.map(fetch_rss_feed, GLOBAL_NEWS_FEEDS))
+
     all_items = []
-    for feed_url in GLOBAL_NEWS_FEEDS:
-        items = fetch_rss_feed(feed_url)
-        # No keyword filtering! Gemini will decide what's relevant.
-        all_items.extend(items)
-        if len(all_items) >= limit:
-            break
+    for result in results:
+        all_items.extend(result)
     return all_items[:limit]
 
 

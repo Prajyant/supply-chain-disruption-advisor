@@ -93,6 +93,7 @@ export const networkApi = {
 export const chatApi = {
   chat: (question: string, topK = 5) =>
     api.post('/chat', { question, top_k: topK }),
+  getContext: () => api.get('/chat/context'),
 };
 
 // ==================== Ingest API ====================
@@ -113,6 +114,10 @@ export const shipmentApi = {
   // Phase-3: shipment tracking endpoints
   getShipments: () => api.get('/shipments'),
   getShipmentsByNode: (nodeId: string) => api.get(`/shipments/node/${nodeId}`),
+  // Preload: batch-analyze all shipments in background
+  preloadAnalyses: (shipments: any[]) => api.post('/shipments/preload', shipments),
+  getPreloadedAnalysis: (shipmentId: string) => api.get(`/shipments/${shipmentId}/preloaded`),
+  getPreloadStatus: () => api.get('/shipments/preload/status'),
   // risk-analysis: CSV upload & Strands risk analysis
   uploadCsv: (file: File) => {
     const formData = new FormData();
@@ -125,6 +130,8 @@ export const shipmentApi = {
   },
   runStrandsRisk: (shipment: any, question?: string) =>
     api.post('/agents/strands/shipment-risk', { shipment, question }),
+  generateResolutionPackage: (shipment: any) =>
+    api.post('/shipments/resolution-package', { shipment, intelligence_events: [], use_live_intelligence: true }),
 };
 
 // ==================== Agent API (risk-analysis) ====================

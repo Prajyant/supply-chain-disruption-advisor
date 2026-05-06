@@ -160,6 +160,9 @@ class AdvisorService:
         # Count predictions for the response message
         pred_count = len(predictions)
 
+        # Update global chat context so the advisor can answer from any page
+        self._refresh_chat_global_context()
+
         message = result["message"]
         if pred_count > 0:
             message += f" 🔮 Predictive engine found {pred_count} potential disruptions by cross-referencing your operations with world news."
@@ -297,6 +300,68 @@ class AdvisorService:
                 )
         except Exception as e:
             logger.error(f"Playbook evaluation failed: {e}", exc_info=True)
+
+    # -------------------------------------------------------------------
+    # Global chat context refresh
+    # -------------------------------------------------------------------
+
+    def _refresh_chat_global_context(self) -> None:
+        """Push current system state into the ChatService global context.
+
+        Called after ingestion so the chat advisor has full awareness of
+        risks, shipments, weather, trade, and network state.
+        """
+        try:
+            from app.ingestion.weather_monitor import fetch_weather_events
+            from app.ingestion.trade_monitor import fetch_trade_policy_events
+
+            # Gather risks
+            risks = []
+            reactive = self.risk_service.get_risks()
+            predictions = self.risk_service.get_predictions()
+            for pred in predictions:
+                risks.append(pred.model_dump() if hasattr(pred, "model_dump") else pred)
+            for r in reactive:
+                meta = r.get("metadata", {}) or {}
+                if not meta.get("_news_context_only") and r.get("severity") != "low":
+                    risks.append(r)
+
+            # Gather shipments
+            shipments = self.shipment_tracker.get_all_shipments()
+
+            # Weather and trade (use cached news events as trade context)
+            weather_events = self._cached_news_events if not self._cached_news_events else []
+            trade_events = []
+            try:
+                weather_events = fetch_weather_events(20)
+                trade_events = fetch_trade_policy_events(15)
+            except Exception:
+                pass
+
+            # Network summary
+            total_nodes = len(self.graph_service.graph.nodes)
+            at_risk = sum(
+                1 for n in self.graph_service.graph.nodes.values()
+                if n.direct_risk >= 0.5
+            )
+            network_summary = {
+                "total_nodes": total_nodes,
+                "at_risk_nodes": at_risk,
+            }
+
+            self.chat_service.update_global_context(
+                risks=risks,
+                shipments=shipments,
+                weather_events=weather_events,
+                trade_events=trade_events,
+                network_summary=network_summary,
+            )
+            logger.info(
+                "Chat global context refreshed: %d risks, %d shipments",
+                len(risks), len(shipments),
+            )
+        except Exception as e:
+            logger.error(f"Failed to refresh chat global context: {e}")
 
     # -------------------------------------------------------------------
     # Graph mapping

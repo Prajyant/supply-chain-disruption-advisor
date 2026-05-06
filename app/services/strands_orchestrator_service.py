@@ -18,7 +18,7 @@ from app.models.schemas import (
     StrandsShipmentRiskRequest,
     StrandsShipmentRiskResponse,
 )
-from app.services.gemini_advice_service import GeminiAdviceService
+from app.services.bedrock_advice_service import BedrockAdviceService
 from app.services.shipment_risk_service import ShipmentRiskService
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,7 @@ class StrandsOrchestratorService:
             use_live_intelligence=should_fetch_live_vessel_context(req.shipment, req.use_live_intelligence),
         )
         steps.append("score_shipment_risk")
-        advice = GeminiAdviceService().build_advice(
+        advice = BedrockAdviceService().build_advice(
             shipment=shipment,
             score_result=score_result,
             question=req.question,

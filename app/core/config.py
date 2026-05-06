@@ -16,9 +16,15 @@ class Settings(BaseModel):
     imap_port: int = int(os.getenv("IMAP_PORT", "993"))
     imap_user: str | None = os.getenv("GMAIL_USER") or None
     imap_pass: str | None = os.getenv("GMAIL_APP_PASSWORD") or None
-    # Gemini AI
+    # Gemini AI (legacy, kept for backward compatibility)
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or None
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    # Amazon Bedrock
+    aws_access_key_id: str | None = os.getenv("AWS_ACCESS_KEY_ID") or None
+    aws_secret_access_key: str | None = os.getenv("AWS_SECRET_ACCESS_KEY") or None
+    aws_session_token: str | None = os.getenv("AWS_SESSION_TOKEN") or None
+    aws_region: str = os.getenv("AWS_REGION", "us-east-1")
+    bedrock_model_id: str = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
 
 @lru_cache(maxsize=1)

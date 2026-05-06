@@ -276,24 +276,44 @@ class ShipmentRiskService:
         }
 
     def _fetch_live_intelligence(self, shipment: ShipmentInput) -> list[dict[str, Any]]:
+        """Fetch all live intelligence sources in parallel for faster response."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         events: list[dict[str, Any]] = []
-        events.extend(self._fetch_vessel_intelligence(shipment))
-        events.extend(self._fetch_flight_intelligence(shipment))
 
-        try:
-            events.extend(fetch_weather_events(limit=10))
-        except Exception as exc:
-            logger.warning("Live weather intelligence unavailable: %s", exc)
+        def _vessel():
+            return self._fetch_vessel_intelligence(shipment)
 
-        try:
-            events.extend(fetch_trade_policy_events(limit=15))
-        except Exception as exc:
-            logger.warning("Live trade intelligence unavailable: %s", exc)
+        def _flight():
+            return self._fetch_flight_intelligence(shipment)
 
-        try:
-            events.extend(fetch_news_context_events(limit=8))
-        except Exception as exc:
-            logger.warning("Live news intelligence unavailable: %s", exc)
+        def _weather():
+            return fetch_weather_events(limit=10)
+
+        def _trade():
+            return fetch_trade_policy_events(limit=15)
+
+        def _news():
+            return fetch_news_context_events(limit=8)
+
+        tasks = {
+            "vessel": _vessel,
+            "flight": _flight,
+            "weather": _weather,
+            "trade": _trade,
+            "news": _news,
+        }
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(fn): name for name, fn in tasks.items()}
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    result = future.result(timeout=20)
+                    if result:
+                        events.extend(result)
+                except Exception as exc:
+                    logger.warning("Live %s intelligence unavailable: %s", name, exc)
 
         return events
 
