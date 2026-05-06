@@ -3,19 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { shipmentApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
-import { ShipmentInput, StrandsShipmentRiskResponse } from '../types';
+import { ShipmentInput } from '../types';
 import {
   AlertTriangle,
   Activity,
-  Clock,
   RefreshCw,
   Ship,
   Radio,
-  Route,
-  Zap,
-  CheckCircle2,
   Upload,
-  DollarSign,
 } from 'lucide-react';
 import { useViewMode } from '../context/ViewModeContext';
 import { CFODashboard } from './CFODashboard';
@@ -27,7 +22,6 @@ export function Dashboard() {
 
   // All hooks must be called before conditional returns (React rules of hooks)
   const [selectedShipmentId, setSelectedShipmentId] = useState('');
-  const [riskResult, setRiskResult] = useState<StrandsShipmentRiskResponse | null>(null);
   const { uploadedShipments, setUploadedShipments } = useShipmentStore();
   const navigate = useNavigate();
 
@@ -49,7 +43,6 @@ export function Dashboard() {
     onSuccess: (data) => {
       setUploadedShipments(data.shipments);
       setSelectedShipmentId('');
-      setRiskResult(null);
       // Trigger background analysis for uploaded shipments so metrics update
       shipmentApi.preloadAnalyses(data.shipments).then(() => refetch());
     },
@@ -59,15 +52,6 @@ export function Dashboard() {
     () => shipments.find((shipment) => shipment.shipment_id === selectedShipmentId) || shipments[0],
     [shipments, selectedShipmentId]
   );
-
-  const analyzeShipment = useMutation({
-    mutationFn: (shipment: ShipmentInput) =>
-      shipmentApi.runStrandsRisk(
-        shipment,
-        `Assess shipment ${shipment.shipment_id} from ${shipment.origin} to ${shipment.destination}.`
-      ).then((res) => res.data as StrandsShipmentRiskResponse),
-    onSuccess: (data) => setRiskResult(data),
-  });
 
   // Delegate to role-specific views (after all hooks)
   if (viewMode === 'cfo')        return <CFODashboard />;
@@ -164,9 +148,7 @@ export function Dashboard() {
         })}
       </div>
 
-      {/* Phase 3: Shipment Tracker Widget removed */}
-
-      <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] gap-6">
+      <section className="grid grid-cols-1 gap-6">
         <div className="card">
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -219,7 +201,6 @@ export function Dashboard() {
                         key={shipment.shipment_id}
                         onClick={() => {
                           setSelectedShipmentId(shipment.shipment_id);
-                          setRiskResult(null);
                           navigate(`/shipments/${shipment.shipment_id}`);
                         }}
                         className={`cursor-pointer border-b border-slate-800/60 transition-colors ${
@@ -240,191 +221,8 @@ export function Dashboard() {
             </div>
           )}
         </div>
-
-        <div className="card">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-lg font-semibold text-white">AI Shipment Analysis</h2>
-              <p className="text-sm text-slate-400">Runs the Strands endpoint with live intelligence</p>
-            </div>
-            <button
-              onClick={() => selectedShipment && analyzeShipment.mutate(selectedShipment)}
-              disabled={!selectedShipment || analyzeShipment.isPending}
-              className="btn-primary flex items-center gap-2 disabled:opacity-50"
-            >
-              <Zap className="w-4 h-4" />
-              {analyzeShipment.isPending ? 'Analyzing' : 'Analyze'}
-            </button>
-          </div>
-
-          {selectedShipment && (
-            <div className="grid grid-cols-2 gap-3 mb-5 text-sm">
-              <InfoBox icon={Route} label="Route" value={`${selectedShipment.origin} to ${selectedShipment.destination}`} />
-              <InfoBox icon={Radio} label="Live Position" value={`${selectedShipment.vessel_latitude}, ${selectedShipment.vessel_longitude}`} />
-              <InfoBox icon={Ship} label="Vessel" value={selectedShipment.vessel_name || selectedShipment.imo_number || 'Tracker supplied'} />
-              <InfoBox icon={Clock} label="ETA" value={selectedShipment.eta_date || 'Not set'} />
-            </div>
-          )}
-
-          {analyzeShipment.error && (
-            <div className="rounded-lg border border-danger-500 bg-danger-500/10 p-4 text-sm text-danger-400">
-              Unable to analyze shipment. Confirm the backend is running on port 8000.
-            </div>
-          )}
-
-          {riskResult ? (
-            <RiskResultPanel result={riskResult} />
-          ) : (
-            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-5 text-sm text-slate-400">
-              Select a shipment and run analysis to test vessel telemetry, marine weather, XGBoost scoring, Bedrock advice, and Strands orchestration.
-            </div>
-          )}
-        </div>
       </section>
 
     </div>
   );
-}
-
-function InfoBox({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-      <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-        <Icon className="w-3.5 h-3.5" />
-        {label}
-      </div>
-      <div className="text-slate-100 truncate">{value}</div>
-    </div>
-  );
-}
-
-function RiskResultPanel({ result }: { result: StrandsShipmentRiskResponse }) {
-  const advice = result.result;
-  const levelClass = {
-    low: 'text-green-400 bg-green-500/10',
-    medium: 'text-yellow-300 bg-yellow-500/10',
-    high: 'text-orange-300 bg-orange-500/10',
-    critical: 'text-danger-400 bg-danger-500/10',
-  }[advice.risk_level];
-
-  const hasFinancialData = advice.financial_exposure_usd > 0 || advice.net_saving_if_act_now_usd > 0;
-
-  return (
-    <div className="space-y-4">
-      {/* Financial Impact Hero Numbers */}
-      {hasFinancialData && (
-        <div className="rounded-xl border-2 border-slate-700 bg-[linear-gradient(135deg,rgba(15,23,42,0.9),rgba(2,6,23,0.97)_50%)] p-4">
-          <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            <DollarSign className="h-3.5 w-3.5" />
-            Financial Impact
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Total Exposure</div>
-              <div className="text-2xl font-bold text-orange-300">
-                {formatDashboardFinancial(advice.financial_exposure_usd)}
-              </div>
-            </div>
-            <div>
-              <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Save If Act Now</div>
-              <div className="text-2xl font-bold text-green-300">
-                {formatDashboardFinancial(advice.net_saving_if_act_now_usd)}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`rounded px-2 py-1 text-xs font-semibold uppercase ${levelClass}`}>
-                {advice.risk_level}
-              </span>
-              <span className="text-xs text-slate-500">{result.orchestration_method}</span>
-            </div>
-            <div className="text-3xl font-bold text-white">{advice.risk_score.toFixed(2)}</div>
-            <p className="text-sm text-slate-400 mt-1">{advice.decision}</p>
-          </div>
-          <div className="text-right text-sm">
-            <div className="flex items-center gap-2 text-green-400 justify-end">
-              <CheckCircle2 className="w-4 h-4" />
-              {advice.confidence_score}% confidence
-            </div>
-            <div className="text-slate-500 mt-1">{result.agent}</div>
-          </div>
-        </div>
-        <p className="mt-4 text-sm text-slate-300 leading-6">{advice.reason}</p>
-      </div>
-
-      {(['high', 'critical'].includes(advice.risk_level?.toLowerCase() || '')) && (
-        <div className="rounded-lg border border-red-500 bg-red-500/10 p-4">
-          <div className="flex items-start gap-3">
-            <span className="text-xl">⚠️</span>
-            <div className="flex-1">
-              <h4 className="text-sm font-bold text-red-300">High Risk Detected — Resolution Package Available</h4>
-              <p className="mt-1 text-xs text-red-200/70">
-                AI can draft a complete resolution package for this shipment, including executive summaries and communication drafts.
-              </p>
-              <button
-                onClick={() => window.location.href = `/shipments/${advice.shipment_id}`}
-                className="mt-3 inline-flex items-center gap-2 rounded bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 px-3 py-1.5 text-xs font-semibold text-red-200 transition-colors"
-              >
-                View Shipment & Generate Resolution
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div>
-        <h3 className="text-sm font-semibold text-white mb-2">Recommended Actions</h3>
-        <div className="space-y-2">
-          {advice.recommended_actions.map((action) => (
-            <div key={action} className="rounded-lg bg-slate-800/70 px-3 py-2 text-sm text-slate-300">
-              {action}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-white mb-2">Signals</h3>
-        <div className="space-y-2">
-          {advice.signals.length > 0 ? advice.signals.map((signal) => (
-            <div key={signal} className="rounded-lg border border-slate-800 px-3 py-2 text-xs text-slate-400">
-              {signal}
-            </div>
-          )) : (
-            <div className="rounded-lg border border-slate-800 px-3 py-2 text-xs text-slate-500">
-              No route-specific signals matched.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-white mb-2">Model Features</h3>
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          {Object.entries(advice.features).map(([key, value]) => (
-            <div key={key} className="flex justify-between gap-2 rounded bg-slate-950/50 px-3 py-2">
-              <span className="text-slate-500 truncate">{key}</span>
-              <span className="font-mono text-slate-200">{Number(value).toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function formatDashboardFinancial(value: number): string {
-  if (value >= 1_000_000) {
-    return `$${(value / 1_000_000).toFixed(1)}M`;
-  }
-  if (value >= 1_000) {
-    return `$${(value / 1_000).toFixed(0)}k`;
-  }
-  return `$${value.toFixed(0)}`;
 }

@@ -1,5 +1,5 @@
 """Speed Maximizer agent."""
-from app.agents.base import GeminiAgent
+from app.agents.base import BedrockAgent
 from app.models.schemas import AgentOpinion
 
 SPEED_PROMPT = """You are the 'Speed Maximizer', a highly delivery-focused supply chain agent.
@@ -15,7 +15,7 @@ You must output a JSON object with:
 - key_argument: The single strongest delivery/timing reason for your recommendation (1 sentence).
 """
 
-class SpeedAgent(GeminiAgent):
+class SpeedAgent(BedrockAgent):
     def __init__(self):
         super().__init__(system_prompt=SPEED_PROMPT)
 

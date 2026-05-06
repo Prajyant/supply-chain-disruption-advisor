@@ -272,7 +272,7 @@ class ShipmentRiskService:
         score = apply_contextual_adjustments(features, score)
         score = max(0.0, min(10.0, round(score, 2)))
 
-        return {
+        result = {
             "shipment_id": shipment.shipment_id,
             "risk_score": score,
             "risk_level": score_to_level(score),
@@ -283,6 +283,52 @@ class ShipmentRiskService:
             "evidence_events": evidence_events,
             "context_events": context_events,
         }
+
+        # Send SES email alert for high/critical shipment risks
+        if score >= 5.0:
+            self._send_shipment_risk_email(shipment, result)
+
+        return result
+
+    def _send_shipment_risk_email(self, shipment: ShipmentInput, result: dict[str, Any]) -> None:
+        """Send SES email notification for high/critical shipment risk scores."""
+        try:
+            from app.services.email_service import EmailService
+
+            email_service = EmailService()
+            risk_level = result["risk_level"]
+            score = result["risk_score"]
+
+            # Map to SES severity for routing
+            ses_severity = "critical" if score >= 8.0 else "high"
+
+            headline = (
+                f"Shipment {shipment.shipment_id} — Risk Score {score}/10 ({risk_level.upper()})"
+            )
+            recommendations = [
+                f"Route: {shipment.origin} → {shipment.destination}",
+                f"Material: {shipment.material}",
+                f"Supplier: {shipment.supplier}",
+            ]
+            if result.get("signals"):
+                recommendations.append(f"Top signal: {result['signals'][0]}")
+
+            email_result = email_service.send_routed_alert(
+                risk_severity=ses_severity,
+                risk_headline=headline,
+                supplier=shipment.supplier,
+                disruption_type="shipping_delay",
+                recommendations=recommendations,
+            )
+            if email_result.success:
+                logger.info(
+                    "SES shipment risk alert sent: score=%.1f, recipients=%s",
+                    score, email_result.recipients_notified,
+                )
+            else:
+                logger.warning("SES shipment risk alert failed: %s", email_result.error)
+        except Exception as e:
+            logger.error("Shipment risk email notification failed: %s", e)
 
     def _fetch_live_intelligence(self, shipment: ShipmentInput) -> list[dict[str, Any]]:
         """Fetch all live intelligence sources in parallel for faster response."""

@@ -6,7 +6,7 @@ This project uses a hybrid AI architecture:
 Dashboard / API
     -> Strands agent orchestration
     -> XGBoost quantitative scoring
-    -> Gemini qualitative reasoning and mitigation
+    -> Bedrock qualitative reasoning and mitigation
     -> JSON response for dashboard
 ```
 
@@ -21,7 +21,7 @@ Planned tools:
 - `fetch_world_intelligence`: news, weather, and trade-policy signals.
 - `track_vessel_by_imo`: vessel telemetry for sea shipments.
 - `score_risk`: XGBoost risk score from structured shipment features.
-- `reason_with_gemini`: explanation, mitigation, and routing.
+- `reason_with_bedrock`: explanation, mitigation, and routing.
 - `validate_response`: JSON schema and quality guardrails.
 
 ### XGBoost
@@ -47,9 +47,9 @@ It should use structured features such as:
 - Port or airport exposure
 - Historical supplier delay count
 
-### Gemini
+### Bedrock
 
-Gemini should explain the score and generate mitigation:
+Bedrock should explain the score and generate mitigation:
 
 ```json
 {
@@ -71,14 +71,14 @@ Current feeds added to ingestion:
 - Weather intelligence from Open-Meteo for major logistics nodes.
 - Trade-policy intelligence from WTO and public trade-policy feeds.
 
-These feeds are normalized into the same event format used by the existing ingestion pipeline, so Gemini can cross-reference them with active supplier emails, inventory, and future shipment records.
+These feeds are normalized into the same event format used by the existing ingestion pipeline, so the engine can cross-reference them with active supplier emails, inventory, and future shipment records.
 
 ## Step Plan
 
 1. Live external intelligence feeds. Done.
 2. Shipment schema and feature extraction. Done.
 3. XGBoost training and local model serving. In progress.
-4. Gemini response formatting and guardrails. Done.
+4. Bedrock response formatting and guardrails. Done.
 5. Strands agent tools that orchestrate the full workflow. Done.
 
 ## Shipment Risk Endpoint
@@ -163,12 +163,12 @@ It runs:
 ```text
 shipment input
   -> XGBoost/heuristic score
-  -> Gemini reasoning
+  -> Bedrock reasoning
   -> JSON guardrails
   -> final advice response
 ```
 
-If Gemini is not configured or returns invalid JSON, the service returns a deterministic fallback with the same response schema.
+If Bedrock is not configured or returns invalid JSON, the service returns a deterministic fallback with the same response schema.
 
 ## Strands Agent Endpoint
 

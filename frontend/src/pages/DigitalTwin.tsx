@@ -11,12 +11,15 @@ import ReactFlow, {
   useEdgesState,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { RefreshCw, Zap } from 'lucide-react';
+import { RefreshCw, AlertTriangle } from 'lucide-react';
 import React from 'react';
 import { NodeDetail } from '../components/NodeDetail';
+import { useViewMode } from '../context/ViewModeContext';
 
 export function DigitalTwin() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const { viewMode } = useViewMode();
+  const isOps = viewMode === 'operations';
 
   const { data: network, isLoading, refetch } = useQuery({
     queryKey: ['network'],
@@ -50,13 +53,13 @@ export function DigitalTwin() {
           id: node.id,
           type: 'default',
           position: { x: colX, y: startY + idx * ROW_SPACING },
-          data: { label: nodeLabel(node), ...node },
+          data: { label: isOps ? opsNodeLabel(node) : nodeLabel(node), ...node },
           style: {
-            background: '#0f172a',
+            background: isOps ? '#0f172a' : '#0f172a',
             border: `2px solid ${accent}`,
-            borderRadius: '10px',
-            padding: '10px 8px',
-            width: 170,
+            borderRadius: isOps ? '12px' : '10px',
+            padding: isOps ? '12px 10px' : '10px 8px',
+            width: isOps ? 180 : 170,
             boxShadow: risk >= 0.6 ? `0 0 12px ${accent}40` : 'none',
           },
         };
@@ -83,12 +86,7 @@ export function DigitalTwin() {
 
     setNodes(flowNodes);
     setEdges(flowEdges);
-  }, [network, setNodes, setEdges]);
-
-  const handlePropagate = async () => {
-    await networkApi.scoreNodes();
-    refetch();
-  };
+  }, [network, setNodes, setEdges, isOps]);
 
   const onNodeClick = useCallback((_event: any, node: Node) => {
     setSelectedNodeId(node.id);
@@ -109,26 +107,35 @@ export function DigitalTwin() {
     <div className="p-8 h-full flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Digital Twin</h1>
+          <h1 className="text-2xl font-bold text-white">
+            {isOps ? 'Network Status' : 'Digital Twin'}
+          </h1>
           <p className="text-slate-400">
-            Live supply chain network · {totalNodes} nodes
+            {isOps ? 'Live supply chain health' : 'Live supply chain network'} · {totalNodes} nodes
             {atRiskCount > 0 && (
               <span className="text-orange-400 ml-2">· {atRiskCount} at risk</span>
             )}
           </p>
         </div>
         <div className="flex gap-2">
-          <button onClick={handlePropagate} className="btn-primary flex items-center gap-2">
-            <Zap className="w-4 h-4" /> Score & Propagate
-          </button>
           <button onClick={() => refetch()} className="btn-secondary flex items-center gap-2">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
         </div>
       </div>
 
-      <div className="flex-1 flex gap-4 overflow-hidden">
-        <div className={`flex-1 bg-slate-950 rounded-lg border border-slate-800 overflow-hidden transition-all ${selectedNodeId ? 'w-2/3' : 'w-full'}`}>
+      {/* Operations: quick status strip */}
+      {isOps && atRiskCount > 0 && (
+        <div className="mb-3 flex items-center gap-3 rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-2">
+          <AlertTriangle className="h-4 w-4 text-orange-400 shrink-0" />
+          <span className="text-sm text-orange-200">
+            {atRiskCount} node{atRiskCount > 1 ? 's' : ''} showing elevated risk — click for details
+          </span>
+        </div>
+      )}
+
+      <div className={`flex-1 flex gap-4 overflow-hidden`}>
+        <div className={`flex-1 bg-slate-950 rounded-lg border border-slate-800 overflow-hidden transition-all ${selectedNodeId ? 'w-3/4' : 'w-full'}`}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -151,7 +158,7 @@ export function DigitalTwin() {
         </div>
 
         {selectedNodeId && (
-          <div className="w-1/3 min-w-[320px]">
+          <div className="w-1/4 min-w-[280px] max-w-[320px]">
             <NodeDetail nodeId={selectedNodeId} onClose={() => setSelectedNodeId(null)} />
           </div>
         )}
@@ -195,6 +202,27 @@ function nodeLabel(node: any) {
         </div>
       ) : (
         <div className="text-[10px] text-slate-500">No risk data</div>
+      )}
+    </div>
+  );
+}
+
+function opsNodeLabel(node: any) {
+  const status = node.status || 'normal';
+  const statusLabel = status === 'critical' ? '⛔ Critical' : status === 'at_risk' ? '⚠️ At Risk' : '✅ Normal';
+  const typeLabel = node.type === 'supplier' ? '🚢' : node.type === 'warehouse' ? '🔄' : '🏭';
+
+  return (
+    <div className="text-center">
+      <div className="flex items-center justify-center gap-1 mb-1">
+        <span className="text-xs">{typeLabel}</span>
+        <span className="font-semibold text-xs text-white leading-tight">{node.name}</span>
+      </div>
+      <div className="text-[10px]" style={{ color: status === 'critical' ? '#fca5a5' : status === 'at_risk' ? '#fcd34d' : '#86efac' }}>
+        {statusLabel}
+      </div>
+      {node.location && (
+        <div className="text-[9px] text-slate-500 mt-0.5">{node.location}</div>
       )}
     </div>
   );

@@ -1,7 +1,6 @@
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
-const AUTH_PATHS = new Set(['/auth/login', '/auth/refresh']);
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -22,45 +21,10 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor to handle token refresh
+// Response interceptor — log errors but don't redirect
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    const requestUrl = originalRequest?.url || '';
-
-    if (!originalRequest || AUTH_PATHS.has(requestUrl)) {
-      return Promise.reject(error);
-    }
-
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-
-      try {
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) {
-          throw new Error('Missing refresh token');
-        }
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, null, {
-          params: { refresh_token: refreshToken },
-        });
-
-        const { access_token } = response.data;
-        localStorage.setItem('access_token', access_token);
-
-        originalRequest.headers.Authorization = `Bearer ${access_token}`;
-        return api(originalRequest);
-      } catch (refreshError) {
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        localStorage.removeItem('auth_user');
-        window.location.href = '/login';
-        return Promise.reject(refreshError);
-      }
-    }
-
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 // ==================== Phase 3: Auth API ====================
@@ -129,6 +93,8 @@ export const shipmentApi = {
       },
     });
   },
+  // Fetch previously uploaded shipments from DynamoDB (persists across reloads)
+  getUploadedShipments: () => api.get('/db/uploaded-shipments'),
   runStrandsRisk: (shipment: any, question?: string) =>
     api.post('/agents/strands/shipment-risk', { shipment, question }),
   generateResolutionPackage: (shipment: any) =>

@@ -16,9 +16,7 @@ class Settings(BaseModel):
     imap_port: int = int(os.getenv("IMAP_PORT", "993"))
     imap_user: str | None = os.getenv("GMAIL_USER") or None
     imap_pass: str | None = os.getenv("GMAIL_APP_PASSWORD") or None
-    # Gemini AI (legacy, kept for backward compatibility)
-    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or None
-    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
     # Amazon Bedrock
     aws_access_key_id: str | None = os.getenv("AWS_ACCESS_KEY_ID") or None
     aws_secret_access_key: str | None = os.getenv("AWS_SECRET_ACCESS_KEY") or None

@@ -42,6 +42,11 @@ class IngestionService:
     ) -> dict[str, int | str]:
         """Ingest data from multiple sources and build search index.
 
+        Data source priority:
+        1. DynamoDB (if available and has data)
+        2. Live sources (emails, real-time news)
+        3. Local CSV files (fallback)
+
         Args:
             supplier_emails_path: Path to supplier emails CSV
             news_feed_path: Path to news feed CSV
@@ -57,30 +62,75 @@ class IngestionService:
         """
         events = []
         settings = get_settings()
+        data_source = "csv"
 
-        # --- Supplier emails: controlled by use_live_emails toggle ---
-        if use_live_emails and settings.imap_user and settings.imap_pass:
-            live_emails = fetch_live_emails(limit=15)
-            if live_emails:
-                events.extend(live_emails)
-                logger.info(f"Loaded {len(live_emails)} live emails from Gmail inbox")
+        # --- Try DynamoDB first ---
+        dynamo_loaded = False
+        try:
+            from app.db.dynamo_loader import (
+                is_dynamo_available,
+                load_supplier_emails_from_dynamo,
+                load_news_feed_from_dynamo,
+                load_inventory_from_dynamo,
+            )
+
+            if is_dynamo_available():
+                dynamo_emails = load_supplier_emails_from_dynamo()
+                dynamo_inventory = load_inventory_from_dynamo()
+
+                if dynamo_emails or dynamo_inventory:
+                    events.extend(dynamo_emails)
+                    events.extend(dynamo_inventory)
+                    dynamo_loaded = True
+                    data_source = "dynamodb"
+                    logger.info(
+                        f"Loaded from DynamoDB: {len(dynamo_emails)} emails, "
+                        f"{len(dynamo_inventory)} inventory items"
+                    )
+
+                    # Load news from DynamoDB if not using realtime
+                    if not use_realtime_news:
+                        dynamo_news = load_news_feed_from_dynamo()
+                        if dynamo_news:
+                            events.extend(dynamo_news)
+                            logger.info(f"Loaded {len(dynamo_news)} news items from DynamoDB")
+        except Exception as e:
+            logger.warning(f"DynamoDB load failed, falling back to CSV: {e}")
+
+        # --- Fallback to CSV / live sources if DynamoDB had nothing ---
+        if not dynamo_loaded:
+            # --- Supplier emails: controlled by use_live_emails toggle ---
+            if use_live_emails and settings.imap_user and settings.imap_pass:
+                live_emails = fetch_live_emails(limit=15)
+                if live_emails:
+                    events.extend(live_emails)
+                    logger.info(f"Loaded {len(live_emails)} live emails from Gmail inbox")
+                else:
+                    logger.warning("Live email fetch returned nothing — falling back to CSV")
+                    try:
+                        csv_emails = load_supplier_emails(supplier_emails_path)
+                        events.extend(csv_emails)
+                        logger.info(f"Loaded {len(csv_emails)} emails from CSV fallback")
+                    except FileNotFoundError:
+                        logger.warning(f"Supplier emails CSV not found: {supplier_emails_path}")
             else:
-                logger.warning("Live email fetch returned nothing — falling back to CSV")
+                # Use hardcoded CSV (default / testing mode)
                 try:
                     csv_emails = load_supplier_emails(supplier_emails_path)
                     events.extend(csv_emails)
-                    logger.info(f"Loaded {len(csv_emails)} emails from CSV fallback")
+                    logger.info(f"Loaded {len(csv_emails)} supplier emails from CSV")
                 except FileNotFoundError:
-                    logger.warning(f"Supplier emails CSV not found: {supplier_emails_path}")
-        else:
-            # Use hardcoded CSV (default / testing mode)
-            try:
-                csv_emails = load_supplier_emails(supplier_emails_path)
-                events.extend(csv_emails)
-                logger.info(f"Loaded {len(csv_emails)} supplier emails from CSV")
-            except FileNotFoundError:
-                logger.warning(f"Supplier emails file not found: {supplier_emails_path}")
+                    logger.warning(f"Supplier emails file not found: {supplier_emails_path}")
 
+            # Load inventory from CSV
+            try:
+                inventory_events = load_inventory(inventory_path)
+                events.extend(inventory_events)
+                logger.info(f"Loaded {len(inventory_events)} inventory events")
+            except FileNotFoundError:
+                logger.warning(f"Inventory file not found: {inventory_path}")
+
+        # --- Real-time news (always fetched fresh if enabled, regardless of DynamoDB) ---
         if use_realtime_news:
             try:
                 news_events = fetch_realtime_news()
@@ -88,28 +138,21 @@ class IngestionService:
                 logger.info(f"Fetched {len(news_events)} real-time news events")
             except Exception as e:
                 logger.error(f"Failed to fetch real-time news: {e}")
-                # Fallback to static file
-                try:
-                    news_events = load_news_feed(news_feed_path)
-                    events.extend(news_events)
-                    logger.info(f"Loaded {len(news_events)} static news events as fallback")
-                except FileNotFoundError:
-                    logger.warning(f"News feed file not found: {news_feed_path}")
-        else:
+                # Fallback to static file if DynamoDB didn't provide news
+                if not dynamo_loaded:
+                    try:
+                        news_events = load_news_feed(news_feed_path)
+                        events.extend(news_events)
+                        logger.info(f"Loaded {len(news_events)} static news events as fallback")
+                    except FileNotFoundError:
+                        logger.warning(f"News feed file not found: {news_feed_path}")
+        elif not dynamo_loaded:
             try:
                 news_events = load_news_feed(news_feed_path)
                 events.extend(news_events)
                 logger.info(f"Loaded {len(news_events)} news events")
             except FileNotFoundError:
                 logger.warning(f"News feed file not found: {news_feed_path}")
-
-        # Load inventory data
-        try:
-            inventory_events = load_inventory(inventory_path)
-            events.extend(inventory_events)
-            logger.info(f"Loaded {len(inventory_events)} inventory events")
-        except FileNotFoundError:
-            logger.warning(f"Inventory file not found: {inventory_path}")
 
         # --- Tariff intelligence ---
         if use_tariff_data:
@@ -155,7 +198,12 @@ class IngestionService:
             "ingested_events": len(events),
             "indexed_chunks": self.vector_index.chunk_count,
             "events": events,
-            "message": f"Real-time data fetched from WorldMonitor API." if use_realtime_news else "Data loaded from CSV files.",
+            "data_source": data_source,
+            "message": (
+                f"Data loaded from DynamoDB." if data_source == "dynamodb"
+                else f"Real-time data fetched from WorldMonitor API." if use_realtime_news
+                else "Data loaded from CSV files."
+            ),
         }
 
     def get_index(self) -> Optional[RetrievalIndex]:

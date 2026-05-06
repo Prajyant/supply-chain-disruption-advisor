@@ -113,7 +113,7 @@ class AdvisorService:
 
         # ---------------------------------------------------------------
         # STEP 2: Reactive layer — analyze emails/inventory only
-        # News events are context for Gemini, NOT individual risk assessments
+        # News events are context for cross-reference, NOT individual risk assessments
         # ---------------------------------------------------------------
         all_risks = self.risk_service.analyze_events(email_events)
 
@@ -165,6 +165,11 @@ class AdvisorService:
                 target=lambda: asyncio.run(self._evaluate_playbooks_background(combined_risks)),
                 daemon=True
             ).start()
+
+        # ---------------------------------------------------------------
+        # STEP 8: Send SES email alerts for high/critical risks
+        # ---------------------------------------------------------------
+        self._send_risk_alert_emails(combined_risks)
 
         # Count predictions for the response message
         pred_count = len(predictions)
@@ -307,8 +312,75 @@ class AdvisorService:
                     {"type": "playbook_executions", "count": len(triggered)},
                     "alerts",
                 )
+                # Send email notifications for triggered playbooks via SES
+                await self._send_playbook_emails(triggered)
         except Exception as e:
             logger.error(f"Playbook evaluation failed: {e}", exc_info=True)
+
+    async def _send_playbook_emails(self, executions: list) -> None:
+        """Send SES email notifications for triggered playbook executions."""
+        try:
+            from app.services.email_service import EmailService
+            email_service = EmailService()
+
+            for execution in executions:
+                # Send playbook notification
+                actions = [a.description for a in execution.actions]
+                risk_score = {"critical": 0.9, "high": 0.7, "medium": 0.5, "low": 0.2}.get(
+                    execution.severity, 0.5
+                )
+                result = email_service.send_playbook_notification(
+                    playbook_name=execution.playbook_name,
+                    node_name=execution.node_name,
+                    actions=actions,
+                    risk_score=risk_score,
+                )
+                if result.success:
+                    logger.info(
+                        "SES playbook email sent: %s -> %s",
+                        execution.playbook_name, result.recipients_notified,
+                    )
+                else:
+                    logger.warning("SES playbook email failed: %s", result.error)
+        except Exception as e:
+            logger.error(f"Playbook email notification failed: {e}")
+
+    # -------------------------------------------------------------------
+    # SES risk alert emails
+    # -------------------------------------------------------------------
+
+    def _send_risk_alert_emails(self, risks: list[RiskAssessment]) -> None:
+        """Send SES email alerts for high and critical severity risks.
+
+        Only sends for high/critical to avoid spamming on routine low/medium risks.
+        """
+        try:
+            from app.services.email_service import EmailService
+            email_service = EmailService()
+
+            alertable = [r for r in risks if r.severity in ("critical", "high")]
+            if not alertable:
+                return
+
+            for risk in alertable:
+                result = email_service.send_routed_alert(
+                    risk_severity=risk.severity,
+                    risk_headline=risk.headline or risk.summary[:100],
+                    supplier=risk.metadata.get("email_supplier", risk.metadata.get("sender_name", "")),
+                    disruption_type=risk.disruption_type,
+                    recommendations=risk.recommendations,
+                )
+                if result.success:
+                    logger.info(
+                        "SES risk alert sent: severity=%s, category=%s, recipients=%s",
+                        risk.severity, result.category, result.recipients_notified,
+                    )
+                else:
+                    logger.warning("SES risk alert failed: %s", result.error)
+
+            logger.info("Sent %d SES risk alert emails", len(alertable))
+        except Exception as e:
+            logger.error(f"Risk alert email sending failed: {e}")
 
     # -------------------------------------------------------------------
     # Global chat context refresh
@@ -418,7 +490,7 @@ class AdvisorService:
         """Get all risk assessments (reactive + predictive).
 
         Returns:
-            - Predictive risks (from Gemini cross-reference) — always shown
+            - Predictive risks (from cross-reference) — always shown
             - Reactive risks from emails that self-reported a problem (medium/high/critical)
             - Low-severity routine emails are suppressed — they are operational noise
         """

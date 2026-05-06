@@ -283,8 +283,34 @@ class RiskWorker(BackgroundWorker):
                     severity=risk.get("severity", "critical"),
                     node_id=risk.get("metadata", {}).get("node_id"),
                 )
+                # Send SES email for critical risks
+                await self._send_risk_email(risk)
         except Exception as e:
             logger.error(f"Risk analysis failed: {e}")
+
+    async def _send_risk_email(self, risk: dict) -> None:
+        """Send SES email notification for a critical/high risk."""
+        try:
+            from app.services.email_service import EmailService
+            email_service = EmailService()
+
+            metadata = risk.get("metadata", {}) or {}
+            result = email_service.send_routed_alert(
+                risk_severity=risk.get("severity", "critical"),
+                risk_headline=risk.get("headline", risk.get("summary", "Supply chain risk detected")),
+                supplier=metadata.get("sender_name", metadata.get("supplier", "")),
+                disruption_type=risk.get("disruption_type", ""),
+                recommendations=risk.get("recommendations", []),
+            )
+            if result.success:
+                logger.info(
+                    "SES risk alert sent: severity=%s, recipients=%s",
+                    risk.get("severity"), result.recipients_notified,
+                )
+            else:
+                logger.warning("SES risk alert failed: %s", result.error)
+        except Exception as e:
+            logger.error(f"Risk email notification failed: {e}")
 
 
 class PropagationWorker(BackgroundWorker):

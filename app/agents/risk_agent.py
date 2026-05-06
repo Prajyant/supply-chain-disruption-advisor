@@ -1,5 +1,5 @@
 """Risk Minimizer agent."""
-from app.agents.base import GeminiAgent
+from app.agents.base import BedrockAgent
 from app.models.schemas import AgentOpinion
 
 RISK_PROMPT = """You are the 'Risk Minimizer', a highly conservative supply chain agent.
@@ -15,7 +15,7 @@ You must output a JSON object with:
 - key_argument: The single strongest reason for your recommendation (1 sentence).
 """
 
-class RiskAgent(GeminiAgent):
+class RiskAgent(BedrockAgent):
     def __init__(self):
         super().__init__(system_prompt=RISK_PROMPT)
 

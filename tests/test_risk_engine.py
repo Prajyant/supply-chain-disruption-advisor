@@ -26,7 +26,7 @@ def test_detects_low_when_no_signal() -> None:
 
 
 def test_news_events_are_neutral_context() -> None:
-    """News events should NOT be individually scored — they are context for Gemini."""
+    """News events should NOT be individually scored — they are context for cross-reference."""
     analyzer = RiskAnalyzer()
     event = {
         "source": "global_news",

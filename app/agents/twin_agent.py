@@ -2,7 +2,7 @@
 from typing import Optional
 from pydantic import BaseModel, Field
 
-from app.agents.base import GeminiAgent
+from app.agents.base import BedrockAgent
 
 TWIN_PROMPT = """You are the 'Digital Twin Agent', an autonomous AI monitoring a global supply chain graph.
 You will be provided with a summary of the current supply chain network, including nodes, edge volumes, and active shipment statuses.
@@ -27,7 +27,7 @@ class TwinAlert(BaseModel):
 class TwinAgentResult(BaseModel):
     alerts: list[TwinAlert] = Field(default_factory=list)
 
-class DigitalTwinAgent(GeminiAgent):
+class DigitalTwinAgent(BedrockAgent):
     def __init__(self):
         super().__init__(system_prompt=TWIN_PROMPT)
 

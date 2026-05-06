@@ -158,8 +158,6 @@ Copy `.env.example` to `.env` and configure:
 ```bash
 # AI/LLM
 OPENAI_API_KEY=your-openai-api-key-here
-GOOGLE_API_KEY=your-google-api-key-here
-GEMINI_API_KEY=your-gemini-api-key
 
 # Amazon Bedrock (powers chat advisor + advice generation)
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
@@ -273,7 +271,7 @@ DATABASE_URL=sqlite:///./supply_chain.db
 | Layer | Technology |
 |-------|-----------|
 | Backend | FastAPI, Python 3.13 |
-| AI/LLM | Amazon Bedrock (Claude), Google Gemini, OpenAI |
+| AI/LLM | Amazon Bedrock (Claude), OpenAI |
 | Agent Framework | Strands Agents SDK |
 | Frontend | React, TypeScript, Vite, TailwindCSS |
 | State | Zustand, React Query |

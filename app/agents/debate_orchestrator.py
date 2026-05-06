@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.agents.base import GeminiAgent
+from app.agents.base import BedrockAgent
 from app.agents.risk_agent import RiskAgent
 from app.agents.cost_agent import CostAgent
 from app.agents.speed_agent import SpeedAgent
@@ -32,7 +32,7 @@ class DebateOrchestrator:
         self.risk_agent = RiskAgent()
         self.cost_agent = CostAgent()
         self.speed_agent = SpeedAgent()
-        self.synthesizer = GeminiAgent(system_prompt=SYNTHESIZER_PROMPT)
+        self.synthesizer = BedrockAgent(system_prompt=SYNTHESIZER_PROMPT)
         
         # Pre-generate/cache 2 DebateResult objects for demo
         self._demo_cache: dict[str, DebateResult] = self._build_demo_cache()

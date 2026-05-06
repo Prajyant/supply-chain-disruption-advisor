@@ -436,6 +436,23 @@ async def upload_shipments_csv(file: UploadFile = File(...)) -> dict:
                 logger.warning(f"AIS enrichment failed, positions will be empty: {exc}")
 
         logger.info(f"CSV upload: parsed {len(shipments)} shipments from {file.filename}")
+
+        # Save uploaded shipments to DynamoDB (fire-and-forget, don't block response)
+        dynamo_saved = 0
+        try:
+            from app.db.csv_to_dynamo import save_uploaded_shipments
+
+            async def _save_bg():
+                try:
+                    count = await asyncio.to_thread(save_uploaded_shipments, shipments, file.filename or "")
+                    logger.info(f"CSV upload: saved {count} shipments to DynamoDB")
+                except Exception as e:
+                    logger.warning(f"DynamoDB background save failed: {e}")
+
+            asyncio.create_task(_save_bg())
+        except Exception as dynamo_err:
+            logger.warning(f"DynamoDB save setup failed (non-blocking): {dynamo_err}")
+
         return {
             "shipments": shipments,
             "count": len(shipments),
@@ -1652,6 +1669,50 @@ async def resolve_mmsi(mmsi: str) -> dict:
     if not result:
         raise HTTPException(status_code=404, detail=f"No identity found for MMSI {mmsi}")
     return result
+
+
+# ==================== DYNAMODB CSV SYNC ====================
+
+
+@router.post("/db/save-csvs")
+async def save_csvs_to_dynamodb() -> dict:
+    """Save all CSV data files to DynamoDB.
+
+    Creates tables if they don't exist, then writes all rows from:
+    - data/supplier_emails.csv
+    - data/news_feed.csv
+    - data/inventory.csv
+    - data/shipment_updates.csv
+
+    Returns item counts per table.
+    """
+    from app.db.csv_to_dynamo import save_all_csvs
+
+    try:
+        results = await asyncio.to_thread(save_all_csvs)
+        return {"status": "ok", "saved": results}
+    except Exception as e:
+        logger.error(f"DynamoDB CSV save failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/db/uploaded-shipments")
+async def get_uploaded_shipments() -> dict:
+    """Retrieve previously uploaded shipments from DynamoDB.
+
+    Returns the shipments so the frontend can restore state after page reload.
+    """
+    try:
+        from app.db.dynamo_loader import is_dynamo_available, load_uploaded_shipments_from_dynamo
+
+        if not is_dynamo_available():
+            return {"shipments": [], "count": 0, "source": "none"}
+
+        shipments = await asyncio.to_thread(load_uploaded_shipments_from_dynamo)
+        return {"shipments": shipments, "count": len(shipments), "source": "dynamodb"}
+    except Exception as e:
+        logger.warning(f"Failed to load uploaded shipments from DynamoDB: {e}")
+        return {"shipments": [], "count": 0, "source": "error"}
 
 
 # ==================== HEALTH ENDPOINT ====================

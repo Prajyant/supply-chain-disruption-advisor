@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import {
   CloudSun,
   Waves,
@@ -7,6 +8,7 @@ import {
   Droplets,
   AlertTriangle,
   Navigation,
+  ChevronDown,
 } from 'lucide-react';
 import { getPositionWeather, type PositionWeatherData } from '../services/weatherService';
 
@@ -53,6 +55,7 @@ function worstSeverity(data: PositionWeatherData): string {
 
 export function LiveWeatherBanner({ latitude, longitude, vesselName, transportMode = 'sea' }: LiveWeatherBannerProps) {
   const hasPosition = typeof latitude === 'number' && typeof longitude === 'number';
+  const [expanded, setExpanded] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['position-weather', latitude, longitude],
@@ -91,34 +94,24 @@ export function LiveWeatherBanner({ latitude, longitude, vesselName, transportMo
   const isSea = transportMode === 'sea' || transportMode === 'multimodal';
 
   return (
-    <section className={`rounded-xl border ${tone.border} ${tone.bg} p-4 shadow-lg ${tone.glow}`}>
-      {/* Alerts banner */}
-      {alerts.length > 0 && (
-        <div className="mb-4 space-y-2">
-          {alerts.map((alert, i) => {
-            const at = severityColor(alert.severity);
-            return (
-              <div key={i} className={`flex items-start gap-2 rounded-lg border ${at.border} ${at.bg} px-4 py-3`}>
-                <AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${at.text}`} />
-                <span className={`text-sm font-medium ${at.text}`}>{alert.message}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Header with big weather condition */}
-      <div className="flex items-start gap-4 mb-4">
-        <div className="flex items-center gap-3">
-          <span className="text-4xl leading-none">{getWeatherEmoji(weather.weather_code)}</span>
-          <div>
-            <div className="text-lg font-bold text-white">{weather.weather_description}</div>
-            <div className="text-sm text-slate-400">
-              {vesselName ? `Near ${vesselName}` : 'At vessel position'} · {latitude!.toFixed(2)}°, {longitude!.toFixed(2)}°
-            </div>
+    <section className={`rounded-xl border ${tone.border} ${tone.bg} shadow-lg ${tone.glow}`}>
+      {/* Clickable header — always visible */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-4 p-4 text-left"
+        aria-expanded={expanded}
+      >
+        <span className="text-3xl leading-none">{getWeatherEmoji(weather.weather_code)}</span>
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-bold text-white">{weather.weather_description}</div>
+          <div className="text-xs text-slate-400 truncate">
+            {vesselName ? `Near ${vesselName}` : 'At vessel position'} · {latitude!.toFixed(2)}°, {longitude!.toFixed(2)}°
+            {weather.temperature_c !== null && ` · ${weather.temperature_c}°C`}
+            {isSea && ` · Waves ${marine.wave_height_m.toFixed(1)}m`}
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold uppercase ${tone.border} ${tone.text}`}>
             <span className={`h-2 w-2 rounded-full ${tone.dot} animate-pulse`} />
             {overall} risk
@@ -127,51 +120,72 @@ export function LiveWeatherBanner({ latitude, longitude, vesselName, transportMo
             <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
             Live
           </span>
+          <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
         </div>
-      </div>
+      </button>
 
-      {/* Weather + Marine grid */}
-      <div className={`grid gap-3 ${isSea ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
-        {/* Atmospheric weather */}
-        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <CloudSun className="h-4 w-4 text-cyan-300" />
-            <span className="text-sm font-semibold text-white">Atmosphere</span>
-            <span className={`ml-auto rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${severityColor(weather.severity).border} ${severityColor(weather.severity).bg} ${severityColor(weather.severity).text}`}>
-              {weather.severity}
-            </span>
+      {/* Expandable detail section */}
+      {expanded && (
+        <div className="px-4 pb-4 space-y-3">
+          {/* Alerts banner */}
+          {alerts.length > 0 && (
+            <div className="space-y-2">
+              {alerts.map((alert, i) => {
+                const at = severityColor(alert.severity);
+                return (
+                  <div key={i} className={`flex items-start gap-2 rounded-lg border ${at.border} ${at.bg} px-4 py-3`}>
+                    <AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${at.text}`} />
+                    <span className={`text-sm font-medium ${at.text}`}>{alert.message}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Weather + Marine grid */}
+          <div className={`grid gap-3 ${isSea ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+            {/* Atmospheric weather */}
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <CloudSun className="h-4 w-4 text-cyan-300" />
+                <span className="text-sm font-semibold text-white">Atmosphere</span>
+                <span className={`ml-auto rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${severityColor(weather.severity).border} ${severityColor(weather.severity).bg} ${severityColor(weather.severity).text}`}>
+                  {weather.severity}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <StatCard icon={Thermometer} label="Temperature" value={weather.temperature_c !== null ? `${weather.temperature_c}°C` : 'N/A'} />
+                <StatCard icon={Wind} label="Wind Speed" value={`${weather.wind_speed_kmh.toFixed(0)} km/h`} />
+                <StatCard icon={Wind} label="Wind Gusts" value={`${weather.wind_gusts_kmh.toFixed(0)} km/h`} />
+                <StatCard icon={Droplets} label="Precipitation" value={`${weather.precipitation_mm.toFixed(1)} mm`} />
+              </div>
+            </div>
+
+            {/* Marine conditions */}
+            {isSea && (
+              <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Waves className="h-4 w-4 text-blue-300" />
+                  <span className="text-sm font-semibold text-white">Sea State</span>
+                  <span className={`ml-auto rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${severityColor(marine.severity).border} ${severityColor(marine.severity).bg} ${severityColor(marine.severity).text}`}>
+                    {marine.severity}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <StatCard icon={Waves} label="Wave Height" value={`${marine.wave_height_m.toFixed(1)} m`} />
+                  <StatCard icon={Waves} label="Swell" value={`${marine.swell_wave_height_m.toFixed(1)} m`} />
+                  <StatCard icon={Navigation} label="Current" value={`${marine.ocean_current_velocity_kmh.toFixed(1)} km/h`} />
+                  <StatCard icon={Waves} label="Wave Period" value={`${marine.wave_period_s.toFixed(0)} s`} />
+                </div>
+              </div>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard icon={Thermometer} label="Temperature" value={weather.temperature_c !== null ? `${weather.temperature_c}°C` : 'N/A'} />
-            <StatCard icon={Wind} label="Wind Speed" value={`${weather.wind_speed_kmh.toFixed(0)} km/h`} />
-            <StatCard icon={Wind} label="Wind Gusts" value={`${weather.wind_gusts_kmh.toFixed(0)} km/h`} />
-            <StatCard icon={Droplets} label="Precipitation" value={`${weather.precipitation_mm.toFixed(1)} mm`} />
+
+          <div className="text-[10px] text-slate-500">
+            Auto-refreshes every 5 min · Source: Open-Meteo
           </div>
         </div>
-
-        {/* Marine conditions */}
-        {isSea && (
-          <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Waves className="h-4 w-4 text-blue-300" />
-              <span className="text-sm font-semibold text-white">Sea State</span>
-              <span className={`ml-auto rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${severityColor(marine.severity).border} ${severityColor(marine.severity).bg} ${severityColor(marine.severity).text}`}>
-                {marine.severity}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatCard icon={Waves} label="Wave Height" value={`${marine.wave_height_m.toFixed(1)} m`} />
-              <StatCard icon={Waves} label="Swell" value={`${marine.swell_wave_height_m.toFixed(1)} m`} />
-              <StatCard icon={Navigation} label="Current" value={`${marine.ocean_current_velocity_kmh.toFixed(1)} km/h`} />
-              <StatCard icon={Waves} label="Wave Period" value={`${marine.wave_period_s.toFixed(0)} s`} />
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-3 text-[10px] text-slate-500">
-        Auto-refreshes every 5 min · Source: Open-Meteo
-      </div>
+      )}
     </section>
   );
 }

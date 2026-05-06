@@ -1,13 +1,13 @@
 """
-Predictive Risk Engine — Gemini-powered cross-reference analysis.
+Predictive Risk Engine — cross-reference analysis.
 
 Two-tier system:
   Tier 1 - REACTIVE: Analyzes individual emails for operational signals
             (delays, shortages, quality issues from the sender themselves).
-  Tier 2 - PREDICTIVE: Feeds batches of normal emails + world news into
-            Gemini to find hidden connections and predict future disruptions.
+  Tier 2 - PREDICTIVE: Cross-references normal emails + world news to find
+            hidden connections and predict future disruptions.
 
-News articles are NEVER analyzed individually — they are context for Gemini only.
+News articles are NEVER analyzed individually — they are context for cross-reference only.
 """
 from __future__ import annotations
 
@@ -21,11 +21,6 @@ from app.core.config import get_settings
 from app.models.schemas import RetrievedContext, RiskAssessment
 
 logger = logging.getLogger(__name__)
-
-try:
-    from google import genai
-except Exception:
-    genai = None
 
 
 # ---------------------------------------------------------------------------
@@ -83,16 +78,7 @@ class RiskAnalyzer:
     """Predictive risk engine."""
 
     def __init__(self) -> None:
-        settings = get_settings()
-        self._gemini_client = None
-        self._gemini_model = settings.gemini_model
-
-        if genai and settings.gemini_api_key:
-            try:
-                self._gemini_client = genai.Client(api_key=settings.gemini_api_key)
-                logger.info(f"Gemini client initialized: model={self._gemini_model}")
-            except Exception as e:
-                logger.warning(f"Gemini init failed: {e}")
+        pass
 
     # -----------------------------------------------------------------------
     # Tier 1: Reactive — analyze a SINGLE EMAIL for self-reported problems
@@ -103,7 +89,7 @@ class RiskAnalyzer:
         Analyze a single event for risk.
 
         IMPORTANT: News events are NOT scored here — they are inputs to
-        Gemini's cross-reference, not risk assessments themselves.
+        cross-reference, not risk assessments themselves.
         Only operational emails (supplier_email, live_email, inventory) are scored.
         """
         source = str(event.get("source", ""))
@@ -115,123 +101,11 @@ class RiskAnalyzer:
 
         text = str(event.get("text", ""))
 
-        # Use Gemini for semantic classification when available
-        if self._gemini_client:
-            result = self._gemini_email_classification(event, text)
-            if result is not None:
-                return result
-
-        # Fallback to keyword heuristic
+        # Use keyword heuristic
         return self._email_heuristic_assessment(event=event, text=text.lower())
 
     # -----------------------------------------------------------------------
-    # Gemini-powered email classification (Tier 1 upgrade)
-    # -----------------------------------------------------------------------
-
-    def _gemini_email_classification(self, event: dict[str, Any], text: str) -> RiskAssessment | None:
-        """Use Gemini to semantically classify an email's risk level.
-
-        Returns None if Gemini fails, so caller can fall back to heuristics.
-        """
-        metadata = dict(event.get("metadata", {})) if isinstance(event.get("metadata"), dict) else {}
-        supplier = (
-            event.get("supplier")
-            or metadata.get("sender_name")
-            or "Unknown Supplier"
-        )
-        subject = metadata.get("subject", "")
-
-        prompt = f"""You are a supply chain risk analyst. Classify this supplier email.
-
-Supplier: {supplier}
-Subject: {subject}
-Body: {text[:600]}
-
-Classify the email into exactly ONE JSON object with these fields:
-- "severity": "critical" | "high" | "medium" | "low"
-- "disruption_type": "logistics" | "financial" | "geopolitical" | "natural_disaster" | "operations" | "security"
-- "confidence": float 0.0-1.0 (how certain you are about the severity)
-- "signals": array of 1-3 specific risk phrases found in the email (empty array if routine)
-- "summary": 1 sentence explaining your classification
-
-Rules:
-- "low" = routine operational email, no problem reported (confirmations, updates, newsletters)
-- "medium" = minor issue mentioned (small delay, partial shortage, variance)
-- "high" = significant problem (strike, quality recall, major delay, production stopped)
-- "critical" = severe disruption (plant shutdown, bankruptcy, force majeure, factory fire)
-- Pay attention to NEGATIONS: "no delay" means low, not medium
-- Pay attention to CONTEXT: "shortage resolved" means low, not medium
-- Be conservative: if unsure, lean toward lower severity
-
-Return ONLY valid JSON. No markdown, no code fences."""
-
-        try:
-            response = self._gemini_client.models.generate_content(
-                model=self._gemini_model,
-                contents=prompt,
-            )
-            raw = response.text.strip()
-            raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
-            raw = re.sub(r"\s*```$", "", raw)
-            raw = raw.strip()
-
-            # Extract JSON object
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            if not match:
-                return None
-
-            result = json.loads(match.group(0))
-
-            severity = str(result.get("severity", "low")).lower()
-            if severity not in {"low", "medium", "high", "critical"}:
-                severity = "low"
-
-            disruption_type = str(result.get("disruption_type", "operations")).lower()
-            valid_types = {"logistics", "financial", "geopolitical", "natural_disaster", "operations", "security"}
-            if disruption_type not in valid_types:
-                disruption_type = "operations"
-
-            confidence = float(result.get("confidence", 0.5))
-            confidence = max(0.0, min(1.0, confidence))
-
-            signals = [str(s) for s in result.get("signals", [])][:5]
-            if not signals and severity != "low":
-                signals = ["AI-detected risk signal"]
-
-            summary_text = str(result.get("summary", ""))
-            if not summary_text:
-                summary_text = (
-                    f"Supplier email from {supplier} classified as {severity.upper()} by AI analysis."
-                    if severity != "low"
-                    else f"Routine operational email from {supplier}. No risk signals detected."
-                )
-
-            return RiskAssessment(
-                risk_id=f"{event.get('source')}-{event.get('reference_id', '')}",
-                source=event.get("source", "unknown"),
-                reference_id=str(event.get("reference_id", "")),
-                detected_at=datetime.now(timezone.utc),
-                disruption_type=disruption_type,
-                severity=severity,
-                confidence=confidence,
-                signals=signals,
-                recommendations=RECOMMENDATION_MAP[severity],
-                summary=summary_text,
-                headline=subject or text[:60],
-                metadata={
-                    **metadata,
-                    "sender_name": supplier,
-                    "matched_signals": signals,
-                    "classification_method": "gemini",
-                },
-            )
-
-        except Exception as e:
-            logger.debug(f"Gemini email classification failed, falling back to heuristic: {e}")
-            return None
-
-    # -----------------------------------------------------------------------
-    # Tier 2: Predictive — Gemini cross-reference emails x news
+    # Tier 2: Predictive — cross-reference emails x news
     # -----------------------------------------------------------------------
 
     def cross_reference(
@@ -241,178 +115,20 @@ Return ONLY valid JSON. No markdown, no code fences."""
     ) -> list[RiskAssessment]:
         """
         Core predictive engine.
-        Takes normal operational emails + real-time news, asks Gemini to find
-        connections and predict future disruptions before they happen.
+        Takes normal operational emails + real-time news, finds
+        connections and predicts future disruptions before they happen.
         """
         if not operations or not news_events:
             logger.info("Cross-reference skipped: no operations or no news")
             return []
 
-        if self._gemini_client:
-            return self._gemini_cross_reference(operations, news_events)
-        else:
-            logger.warning("Gemini unavailable — using geographic heuristic fallback")
-            return self._heuristic_cross_reference(operations, news_events)
+        return self._heuristic_cross_reference(operations, news_events)
 
     def answer_question(
         self, question: str, contexts: list[RetrievedContext]
     ) -> tuple[str, list[str]]:
-        """Answer a supply chain advisory question using Gemini."""
-        joined = "\n".join([f"- [{c.source}] {c.text}" for c in contexts[:6]])
-        if self._gemini_client:
-            try:
-                prompt = (
-                    "You are an expert supply chain disruption advisor.\n"
-                    "Use the provided context to answer clearly and suggest practical mitigation actions.\n"
-                    f"Question: {question}\n\nContext:\n{joined}\n"
-                    "Return plain text with a concise answer followed by bullet recommendations."
-                )
-                response = self._gemini_client.models.generate_content(
-                    model=self._gemini_model,
-                    contents=prompt,
-                )
-                text = response.text.strip()
-                recs = [
-                    line.lstrip("- •").strip()
-                    for line in text.splitlines()
-                    if line.strip().startswith(("-", "•"))
-                ]
-                return text, recs[:5]
-            except Exception as e:
-                logger.warning(f"Gemini chat failed: {e}")
+        """Answer a supply chain advisory question."""
         return self._heuristic_chat_answer(question, contexts)
-
-    # -----------------------------------------------------------------------
-    # Gemini cross-reference
-    # -----------------------------------------------------------------------
-
-    def _gemini_cross_reference(
-        self,
-        operations: list[dict[str, Any]],
-        news_events: list[dict[str, Any]],
-    ) -> list[RiskAssessment]:
-        """Use Gemini to cross-reference operations with news headlines."""
-        ops_summary = self._build_operations_summary(operations)
-        news_summary = self._build_news_summary(news_events)
-
-        prompt = f"""You are an expert supply chain risk analyst.
-
-## Active Supply Chain Operations
-{ops_summary}
-
-## Current World News Headlines
-{news_summary}
-
-## Task
-Identify which active operations could be disrupted by current world events.
-Consider geographic overlap, material type, trade routes, geopolitical tensions,
-weather events, trade policy, UN/WTO trade developments, customs restrictions,
-sanctions, port conditions, and air/sea route disruption.
-
-Rules:
-- Only report genuine, specific connections — do NOT flag everything.
-- A shipment from Shanghai is affected by China trade war news.
-- A chemical shipment from Gujarat is affected by Indian port/weather news.
-- A booking via Busan is affected by Korea/Pacific shipping disruptions.
-- A shipment through a port or airport is affected by severe weather near that node.
-- A cross-border shipment is affected by tariffs, export bans, customs delays, or sanctions.
-- Do NOT flag Canada whiskey tariffs as affecting a polymer shipment from Munich.
-
-For each genuine connection, return a JSON object with:
-- "operation_index": (int) 0-based index of the affected operation
-- "news_index": (int) 0-based index of the causative news article
-- "severity": "critical" | "high" | "medium" | "low"
-- "disruption_type": "logistics" | "geopolitical" | "natural_disaster" | "financial" | "operations" | "security"
-- "confidence": (float 0.0-1.0) — be honest, not everything is 0.9+
-- "prediction": (string) 1-2 sentences explaining the exact connection
-- "recommendations": (array) 2-3 specific actionable steps
-
-Return ONLY a valid JSON array. No markdown, no code fences, no extra text.
-If no genuine connections exist, return: []"""
-
-        try:
-            response = self._gemini_client.models.generate_content(
-                model=self._gemini_model,
-                contents=prompt,
-            )
-            raw = response.text.strip()
-
-            # Strip markdown code fences if Gemini wraps the response
-            raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
-            raw = re.sub(r"\s*```$", "", raw)
-            raw = raw.strip()
-
-            # Extract JSON array
-            match = re.search(r"\[.*\]", raw, re.DOTALL)
-            if not match:
-                logger.warning(f"Gemini returned no valid JSON array. Raw: {raw[:200]}")
-                return self._heuristic_cross_reference(operations, news_events)
-
-            results = json.loads(match.group(0))
-
-            predictions: list[RiskAssessment] = []
-            for pred in results:
-                op_idx = int(pred.get("operation_index", -1))
-                news_idx = int(pred.get("news_index", -1))
-
-                if not (0 <= op_idx < len(operations)):
-                    continue
-                if not (0 <= news_idx < len(news_events)):
-                    continue
-
-                op = operations[op_idx]
-                news = news_events[news_idx]
-                severity = str(pred.get("severity", "medium")).lower()
-                if severity not in {"low", "medium", "high", "critical"}:
-                    severity = "medium"
-
-                op_supplier = (
-                    op.get("supplier")
-                    or op.get("metadata", {}).get("sender_name")
-                    or "Unknown Supplier"
-                )
-                news_headline = self._clean_text(
-                    news.get("metadata", {}).get("title", "")
-                    or news.get("text", "")[:80]
-                )
-                prediction_text = str(pred.get("prediction", ""))
-                recommendations = [
-                    str(r) for r in pred.get("recommendations", RECOMMENDATION_MAP[severity])
-                ]
-
-                predictions.append(RiskAssessment(
-                    risk_id=f"predict-{op_idx}-{news_idx}",
-                    source="predictive_analysis",
-                    reference_id=f"op{op_idx}-news{news_idx}",
-                    detected_at=datetime.now(timezone.utc),
-                    disruption_type=str(pred.get("disruption_type", "logistics")),
-                    severity=severity,
-                    confidence=float(pred.get("confidence", 0.7)),
-                    signals=[f"Email: {op_supplier}", f"News: {news_headline[:60]}"],
-                    recommendations=recommendations[:3],
-                    summary=prediction_text,
-                    headline=f"\u26a0\ufe0f {op_supplier} — predicted disruption",
-                    metadata={
-                        "type": "prediction",
-                        "email_subject": (
-                            op.get("metadata", {}).get("subject", "")
-                            or op.get("text", "")[:60]
-                        ),
-                        "email_supplier": op_supplier,
-                        "email_origin": op.get("metadata", {}).get("origin_location", ""),
-                        "news_headline": news_headline,
-                        "news_source": news.get("source", ""),
-                        "prediction": prediction_text,
-                        "sender_name": op_supplier,
-                    },
-                ))
-
-            logger.info(f"Gemini predicted {len(predictions)} potential disruptions")
-            return predictions
-
-        except Exception as e:
-            logger.error(f"Gemini cross-reference failed: {e}")
-            return self._heuristic_cross_reference(operations, news_events)
 
     # -----------------------------------------------------------------------
     # Heuristic cross-reference fallback
@@ -441,7 +157,6 @@ If no genuine connections exist, return: []"""
         "singapore": ["singapore"],
         "mundra": ["mundra", "gujarat", "india", "indian"],
         "suez canal": ["suez canal", "suez"],
-        "dubai": ["dubai", "uae", "united arab emirates"],
     }
 
     HEURISTIC_NEWS_SEVERITY: dict[str, list[str]] = {
@@ -455,7 +170,7 @@ If no genuine connections exist, return: []"""
         operations: list[dict[str, Any]],
         news_events: list[dict[str, Any]],
     ) -> list[RiskAssessment]:
-        """Geographic keyword fallback — only used when Gemini is unavailable."""
+        """Geographic keyword cross-reference."""
         predictions: list[RiskAssessment] = []
         seen: set[str] = set()
 

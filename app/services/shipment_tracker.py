@@ -470,10 +470,23 @@ class ShipmentTracker:
     # -----------------------------------------------------------------------
 
     def load_shipment_updates_csv(self, path: str = "data/shipment_updates.csv") -> list[dict[str, Any]]:
-        """Load follow-up shipment emails from CSV.
+        """Load follow-up shipment emails from DynamoDB first, then CSV fallback.
 
         Returns events in the same format as email ingestion pipeline.
         """
+        # Try DynamoDB first
+        try:
+            from app.db.dynamo_loader import is_dynamo_available, load_shipment_updates_from_dynamo
+
+            if is_dynamo_available():
+                dynamo_events = load_shipment_updates_from_dynamo()
+                if dynamo_events:
+                    logger.info(f"Loaded {len(dynamo_events)} shipment updates from DynamoDB")
+                    return dynamo_events
+        except Exception as e:
+            logger.warning(f"DynamoDB shipment updates load failed: {e}")
+
+        # Fallback to CSV
         events: list[dict[str, Any]] = []
         try:
             with open(path, "r", encoding="utf-8") as f:

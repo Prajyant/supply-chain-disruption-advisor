@@ -1,5 +1,5 @@
 """Cost Optimizer agent."""
-from app.agents.base import GeminiAgent
+from app.agents.base import BedrockAgent
 from app.models.schemas import AgentOpinion
 
 COST_PROMPT = """You are the 'Cost Optimizer', a highly budget-focused supply chain agent.
@@ -15,7 +15,7 @@ You must output a JSON object with:
 - key_argument: The single strongest financial reason for your recommendation (1 sentence).
 """
 
-class CostAgent(GeminiAgent):
+class CostAgent(BedrockAgent):
     def __init__(self):
         super().__init__(system_prompt=COST_PROMPT)
 

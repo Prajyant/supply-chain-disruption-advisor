@@ -6,7 +6,6 @@ import {
   CloudSun,
   Cpu,
   FileText,
-  ShieldCheck,
 } from 'lucide-react';
 
 type DebugSection = {
@@ -24,8 +23,6 @@ interface DebugPanelProps {
   evidenceContent: ReactNode;
   technicalStepCount: number;
   technicalWorkflowContent: ReactNode;
-  mitigationCount: number;
-  mitigationContent: ReactNode;
   contextCount: number;
   contextContent: ReactNode;
 }
@@ -37,8 +34,6 @@ export function DebugPanel({
   evidenceContent,
   technicalStepCount,
   technicalWorkflowContent,
-  mitigationCount,
-  mitigationContent,
   contextCount,
   contextContent,
 }: DebugPanelProps) {
@@ -65,13 +60,6 @@ export function DebugPanel({
       count: technicalStepCount,
       icon: FileText,
       content: technicalWorkflowContent,
-    },
-    {
-      id: 'mitigation',
-      label: 'Full Mitigation',
-      count: mitigationCount,
-      icon: ShieldCheck,
-      content: mitigationContent,
     },
     {
       id: 'context',

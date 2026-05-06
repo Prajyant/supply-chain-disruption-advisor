@@ -363,7 +363,35 @@ class PlaybookEngine:
                 f"on node {execution.node_id} (severity: {risk.severity})"
             )
 
+            # Send email notification for triggered playbook
+            await self._send_playbook_email(execution, playbook)
+
         return triggered
+
+    async def _send_playbook_email(
+        self, execution: PlaybookExecution, playbook: Playbook
+    ) -> None:
+        """Send email notification when a playbook is triggered."""
+        try:
+            from app.services.email_service import EmailService
+
+            email_service = EmailService()
+            result = email_service.send_playbook_notification(
+                playbook_name=execution.playbook_name,
+                node_name=execution.node_name,
+                actions=[a.description for a in execution.actions],
+                risk_score={"critical": 0.95, "high": 0.75, "medium": 0.5, "low": 0.25}.get(
+                    execution.severity, 0.5
+                ),
+            )
+            if result.success:
+                logger.info(
+                    f"Playbook email sent: '{execution.playbook_name}' -> {result.recipients_notified}"
+                )
+            else:
+                logger.warning(f"Playbook email failed: {result.error}")
+        except Exception as e:
+            logger.error(f"Failed to send playbook email: {e}")
 
     async def simulate_playbook(
         self,

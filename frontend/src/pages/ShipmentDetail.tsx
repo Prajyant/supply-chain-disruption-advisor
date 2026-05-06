@@ -1,10 +1,11 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
   CloudSun,
   Cpu,
   Database,
@@ -30,15 +31,14 @@ import {
 import { agentApi, shipmentApi, maritimeApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
 import { getPreloadedAnalysis } from '../services/shipmentPreloader';
-import { ResolutionPackageComponent } from '../components/ResolutionPackage';
-import { EvidenceEvent, ShipmentInput, StrandsShipmentRiskResponse, ResolutionPackage } from '../types';
+import { EvidenceEvent, ShipmentInput, StrandsShipmentRiskResponse } from '../types';
 import { VesselMap } from '../components/VesselMap';
 import { DebugPanel } from '../components/DebugPanel';
 import { LiveWeatherBanner } from '../components/LiveWeatherBanner';
 import { getPositionWeather, type PositionWeatherData } from '../services/weatherService';
 import { fetchVesselStatus } from '../services/vesselApi';
 import { useShipmentStore } from '../store/shipmentStore';
-import { useState } from 'react';
+import { useViewMode } from '../context/ViewModeContext';
 
 type StrandsStatus = {
   agent: string;
@@ -74,9 +74,7 @@ type ProcessorStep = {
 export function ShipmentDetail() {
   const navigate = useNavigate();
   const { shipmentId = '' } = useParams();
-
-  const [resolutionPackage, setResolutionPackage] = useState<ResolutionPackage | null>(null);
-  const [isGeneratingPackage, setIsGeneratingPackage] = useState(false);
+  const { viewMode } = useViewMode();
 
   const shipmentsQuery = useQuery({
     queryKey: ['demo-shipments'],
@@ -284,7 +282,6 @@ export function ShipmentDetail() {
                 ETA {shipment.eta_date || 'not set'}
               </span>
             </div>
-            <h1 className="text-3xl font-bold text-white">Shipment Detail Analysis</h1>
             <p className="mt-2 max-w-4xl text-lg text-slate-300">
               <span className="font-mono text-cyan-200">{shipment.shipment_id}</span> for {shipment.supplier}
             </p>
@@ -298,29 +295,6 @@ export function ShipmentDetail() {
           </div>
 
           <div className="flex flex-col gap-2">
-            {(['high', 'critical'].includes(analysis?.result?.risk_level?.toLowerCase() || '')) && (
-              <button
-                onClick={async () => {
-                  setIsGeneratingPackage(true);
-                  try {
-                    const res = await shipmentApi.generateResolutionPackage(shipment);
-                    setResolutionPackage(res.data);
-                    setTimeout(() => {
-                      document.getElementById('resolution-package-container')?.scrollIntoView({ behavior: 'smooth' });
-                    }, 100);
-                  } catch (e) {
-                    console.error(e);
-                  } finally {
-                    setIsGeneratingPackage(false);
-                  }
-                }}
-                disabled={isGeneratingPackage}
-                className="inline-flex w-fit items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/20 px-4 py-3 text-sm font-bold text-red-200 shadow-lg shadow-red-950/30 transition-all hover:bg-red-500/30 disabled:opacity-50"
-              >
-                {isGeneratingPackage ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>🚨</span>}
-                {isGeneratingPackage ? 'AI is preparing your resolution package...' : 'Generate Resolution Package'}
-              </button>
-            )}
             <button
               onClick={() => analysisQuery.refetch()}
               disabled={analysisQuery.isFetching}
@@ -332,6 +306,15 @@ export function ShipmentDetail() {
           </div>
         </div>
       </section>
+
+      {/* Mitigation strategies */}
+      {analysis && (
+        <MitigationStrategies
+          actions={analysis.result.recommended_actions}
+          escalationRequired={analysis.result.escalation_required}
+          viewMode={viewMode}
+        />
+      )}
 
       {/* Live weather + marine conditions at vessel position */}
       <LiveWeatherBanner
@@ -353,15 +336,13 @@ export function ShipmentDetail() {
       />
 
       {analysis ? (
-        <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
-          <div className="min-w-0 space-y-5">
-            <FinancialImpactPanel result={analysis} />
+        <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+          <div className="min-w-0 space-y-4">
             <CompactRiskSummary result={analysis} />
-            <KeyRiskDrivers result={analysis} positionWeather={positionWeatherQuery.data ?? undefined} />
+            {viewMode !== 'operations' && <FinancialImpactPanel result={analysis} />}
+            {viewMode !== 'cfo' && <KeyRiskDrivers result={analysis} positionWeather={positionWeatherQuery.data ?? undefined} />}
             
-            <div id="resolution-package-container">
-              {resolutionPackage && <ResolutionPackageComponent data={resolutionPackage} />}
-            </div>
+
           </div>
 
           <section className="card min-w-0 space-y-4 overflow-hidden">
@@ -410,7 +391,7 @@ export function ShipmentDetail() {
         <InlineError message="Shipment analysis failed. Check that the backend is running and then refresh this page." />
       ) : null}
 
-      {analysis && (
+      {analysis && viewMode === 'analyst' && (
         <DebugPanel
           modelFeatureCount={Object.keys(analysis.result.features).length}
           modelFeaturesContent={<ModelFeaturesList features={analysis.result.features} />}
@@ -422,13 +403,6 @@ export function ShipmentDetail() {
               steps={processorSteps}
               toolSteps={analysis.steps}
               isLoading={analysisQuery.isLoading || analysisQuery.isFetching}
-            />
-          }
-          mitigationCount={analysis.result.recommended_actions.length}
-          mitigationContent={
-            <MitigationDebugContent
-              actions={analysis.result.recommended_actions}
-              escalationRequired={analysis.result.escalation_required}
             />
           }
           contextCount={contextEvents.length + 1}
@@ -561,35 +535,97 @@ function EvidenceDebugContent({
   );
 }
 
-function MitigationDebugContent({
+function MitigationStrategies({
   actions,
   escalationRequired,
+  viewMode = 'analyst',
 }: {
   actions: string[];
   escalationRequired: boolean;
+  viewMode?: string;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (actions.length === 0) return null;
+
+  const parseAction = (action: string) => {
+    const match = action.match(/^\[([^\]]+)\]\s*(.*)/s);
+    return match ? { owner: match[1], text: match[2] } : { owner: 'Team', text: action };
+  };
+
+  // Filter actions based on role
+  const OPS_OWNERS = ['plant', 'carrier', 'forwarder', 'logistics', 'team'];
+  const filteredActions = viewMode === 'operations'
+    ? actions.filter((a) => {
+        const parsed = parseAction(a);
+        return OPS_OWNERS.includes(parsed.owner.toLowerCase());
+      })
+    : actions;
+
+  if (filteredActions.length === 0) return null;
+
+  const ownerColors: Record<string, string> = {
+    plant: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300',
+    procurement: 'border-blue-400/30 bg-blue-400/10 text-blue-300',
+    supplier: 'border-amber-400/30 bg-amber-400/10 text-amber-300',
+    carrier: 'border-purple-400/30 bg-purple-400/10 text-purple-300',
+    forwarder: 'border-cyan-400/30 bg-cyan-400/10 text-cyan-300',
+    logistics: 'border-pink-400/30 bg-pink-400/10 text-pink-300',
+  };
+
+  const getOwnerColor = (owner: string) => {
+    const key = owner.toLowerCase();
+    return ownerColors[key] || 'border-slate-600 bg-slate-800 text-slate-300';
+  };
+
   return (
-    <div className="space-y-3">
-      {actions.map((action, index) => (
-        <div key={action} className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary-300">
-            Action {index + 1}
-          </div>
-          <p className="break-words text-sm leading-6 text-slate-200">{action}</p>
+    <section className="rounded-xl border border-indigo-500/30 bg-[linear-gradient(135deg,rgba(49,46,129,0.15),rgba(2,6,23,0.97)_40%)] p-4 shadow-xl shadow-indigo-950/20">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-3 text-left"
+        aria-expanded={expanded}
+      >
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-400/30 bg-indigo-400/10">
+          <ShieldCheck className="h-4 w-4 text-indigo-300" />
         </div>
-      ))}
-      {escalationRequired && (
-        <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold text-danger-300">
-            <AlertCircle className="h-4 w-4" />
-            Escalation Required
-          </div>
-          <p className="mt-2 text-sm text-slate-300">
-            This shipment requires immediate attention from procurement and logistics leadership.
-          </p>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-semibold text-white">Mitigation Strategies</h2>
+          <p className="text-[10px] text-slate-400">{filteredActions.length} actions{viewMode === 'operations' ? ' (ops-relevant)' : ''}{escalationRequired ? ' · Escalation required' : ''}</p>
+        </div>
+        <span className="rounded-full border border-indigo-400/30 bg-indigo-400/10 px-3 py-1 text-[10px] font-semibold text-indigo-200">
+          {expanded ? 'Hide' : 'View'} strategies
+        </span>
+        <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          {escalationRequired && (
+            <div className="flex items-center gap-2 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs font-medium text-danger-300">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              Escalation required — immediate leadership attention needed
+            </div>
+          )}
+          {filteredActions.map((action, index) => {
+            const parsed = parseAction(action);
+            return (
+              <div key={index} className="flex gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-[10px] font-bold text-indigo-200">
+                  {index + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className={`mb-1 inline-block rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${getOwnerColor(parsed.owner)}`}>
+                    {parsed.owner}
+                  </span>
+                  <p className="text-xs leading-5 text-slate-200">{parsed.text}</p>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -1029,22 +1065,22 @@ function FinancialImpactPanel({ result }: { result: StrandsShipmentRiskResponse 
   })();
 
   return (
-    <section className={`relative min-w-0 overflow-hidden rounded-xl border-2 ${borderColor} ${panelGradient} p-6 shadow-2xl shadow-slate-950/60`}>
-      <div className={`absolute inset-x-0 top-0 h-1.5 ${stripColor}`} />
+    <section className={`relative min-w-0 overflow-hidden rounded-xl border-2 ${borderColor} ${panelGradient} p-4 shadow-2xl shadow-slate-950/60`}>
+      <div className={`absolute inset-x-0 top-0 h-1 ${stripColor}`} />
 
       {/* Header */}
-      <div className="mb-5 flex items-center gap-3">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isHighSeverity ? 'border border-danger-500/30 bg-danger-500/15' : isMedium ? 'border border-yellow-500/30 bg-yellow-500/15' : 'border border-slate-700 bg-slate-800'}`}>
-          <DollarSign className={`h-5 w-5 ${isHighSeverity ? 'text-danger-300' : isMedium ? 'text-yellow-300' : 'text-slate-400'}`} />
+      <div className="mb-3 flex items-center gap-2">
+        <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${isHighSeverity ? 'border border-danger-500/30 bg-danger-500/15' : isMedium ? 'border border-yellow-500/30 bg-yellow-500/15' : 'border border-slate-700 bg-slate-800'}`}>
+          <DollarSign className={`h-4 w-4 ${isHighSeverity ? 'text-danger-300' : isMedium ? 'text-yellow-300' : 'text-slate-400'}`} />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-white">Financial Impact Assessment</h2>
-          <p className="text-xs text-slate-400">Calculated from shipment value, risk score, and lead time</p>
+          <h2 className="text-base font-bold text-white">Financial Impact Assessment</h2>
+          <p className="text-[10px] text-slate-400">Calculated from shipment value, risk score, and lead time</p>
         </div>
       </div>
 
       {/* 2x2 Metrics Grid */}
-      <div className="grid grid-cols-2 gap-4 mb-5">
+      <div className="grid grid-cols-2 gap-3 mb-3">
         <FinancialMetricCard
           label="Total Exposure"
           value={formatFinancialAmount(financial_exposure_usd)}
@@ -1076,46 +1112,42 @@ function FinancialImpactPanel({ result }: { result: StrandsShipmentRiskResponse 
       </div>
 
       {/* Production Lines + Halt Date */}
-      <div className="space-y-3 border-t border-slate-800/80 pt-4">
+      <div className="space-y-2 border-t border-slate-800/80 pt-3">
         {production_lines_at_risk.length > 0 && (
-          <div className="flex items-start gap-3">
-            <Factory className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-            <div className="min-w-0">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Production lines at risk</span>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {production_lines_at_risk.map((line) => (
-                  <span
-                    key={line}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                      isHighSeverity
-                        ? 'border-danger-500/30 bg-danger-500/10 text-danger-200'
-                        : isMedium
-                          ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-200'
-                          : 'border-slate-700 bg-slate-800 text-slate-300'
-                    }`}
-                  >
-                    {line}
-                  </span>
-                ))}
-              </div>
+          <div className="flex items-center gap-2">
+            <Factory className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Production lines at risk</span>
+            <div className="flex flex-wrap gap-1.5">
+              {production_lines_at_risk.map((line) => (
+                <span
+                  key={line}
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                    isHighSeverity
+                      ? 'border-danger-500/30 bg-danger-500/10 text-danger-200'
+                      : isMedium
+                        ? 'border-yellow-500/30 bg-yellow-500/10 text-yellow-200'
+                        : 'border-slate-700 bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {line}
+                </span>
+              ))}
             </div>
           </div>
         )}
 
         {halt_date_estimate && (
-          <div className="flex items-center gap-3">
-            <Calendar className={`h-4 w-4 shrink-0 ${haltDateUrgent ? 'text-danger-400' : 'text-slate-500'}`} />
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Estimated halt date:</span>
-              <span className={`text-sm font-semibold ${haltDateUrgent ? 'text-danger-300 animate-pulse' : 'text-slate-200'}`}>
-                {halt_date_estimate}
+          <div className="flex items-center gap-2">
+            <Calendar className={`h-3.5 w-3.5 shrink-0 ${haltDateUrgent ? 'text-danger-400' : 'text-slate-500'}`} />
+            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">Estimated halt date:</span>
+            <span className={`text-xs font-semibold ${haltDateUrgent ? 'text-danger-300 animate-pulse' : 'text-slate-200'}`}>
+              {halt_date_estimate}
+            </span>
+            {haltDateUrgent && (
+              <span className="rounded-full border border-danger-500/30 bg-danger-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-danger-300">
+                Imminent
               </span>
-              {haltDateUrgent && (
-                <span className="rounded-full border border-danger-500/30 bg-danger-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-danger-300">
-                  Imminent
-                </span>
-              )}
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -1140,21 +1172,21 @@ function FinancialMetricCard({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-xl border p-4 transition-colors ${
+      className={`relative overflow-hidden rounded-lg border p-3 transition-colors ${
         isHero
           ? 'border-green-500/40 bg-[linear-gradient(135deg,rgba(20,83,45,0.25),rgba(2,6,23,0.95)_50%)] shadow-lg shadow-green-950/20'
           : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
       }`}
     >
       {isHero && <div className="absolute inset-x-0 top-0 h-0.5 bg-green-400" />}
-      <div className="mb-2 flex items-center gap-2">
+      <div className="mb-1 flex items-center gap-1.5">
         {icon}
-        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">{label}</span>
       </div>
-      <div className={`font-bold ${isHero ? 'text-2xl text-green-300' : 'text-xl text-white'}`}>
+      <div className={`font-bold ${isHero ? 'text-xl text-green-300' : 'text-lg text-white'}`}>
         {value}
       </div>
-      <div className="mt-1 text-[11px] text-slate-500">{sublabel}</div>
+      <div className="text-[10px] text-slate-500">{sublabel}</div>
     </div>
   );
 }
@@ -1179,45 +1211,45 @@ function CompactRiskSummary({ result }: { result: StrandsShipmentRiskResponse })
   const scoreAngle = Math.min(Math.max(advice.risk_score, 0), 10) * 36;
 
   return (
-    <section className={`relative min-w-0 overflow-hidden rounded-xl border ${tone.border} ${tone.panel} p-5 shadow-2xl ${tone.shadow}`}>
+    <section className={`relative min-w-0 overflow-hidden rounded-xl border ${tone.border} ${tone.panel} p-4 shadow-2xl ${tone.shadow}`}>
       <div className={`absolute inset-x-0 top-0 h-1 ${tone.strip}`} />
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-        <div className="min-w-0 flex-1 space-y-4">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div className="min-w-0 flex-1 space-y-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${tone.badge}`}>
+            <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${tone.badge}`}>
               {advice.risk_level} risk
             </span>
-            <span className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-xs text-slate-400">
+            <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2.5 py-0.5 text-[10px] text-slate-400">
               {result.orchestration_method}
             </span>
-            <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase ${tone.badge}`}>
+            <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase ${tone.badge}`}>
               {formatDecision(advice.decision)}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[132px_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[100px_minmax(0,1fr)]">
             <div
-              className="flex aspect-square w-32 items-center justify-center rounded-full p-2"
+              className="flex aspect-square w-24 items-center justify-center rounded-full p-1.5"
               style={{
                 background: `conic-gradient(${tone.hex} ${scoreAngle}deg, rgba(30,41,59,0.75) 0deg)`,
               }}
             >
               <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-slate-950">
-                <span className="text-4xl font-bold text-white">{advice.risk_score.toFixed(1)}</span>
-                <span className="text-xs uppercase tracking-wide text-slate-500">of 10</span>
+                <span className="text-3xl font-bold text-white">{advice.risk_score.toFixed(1)}</span>
+                <span className="text-[10px] uppercase tracking-wide text-slate-500">of 10</span>
               </div>
             </div>
 
             <div className="min-w-0">
-              <h2 className="text-xl font-semibold text-white">Control Tower Recommendation</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-300">{advice.reason}</p>
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <h2 className="text-base font-semibold text-white">Control Tower Recommendation</h2>
+              <p className="mt-1 text-sm leading-5 text-slate-300">{advice.reason}</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                 <MetricPill label="Confidence" value={`${advice.confidence_score}%`} />
                 <MetricPill label="Method" value={advice.scoring_method.split('_').slice(0, 2).join(' ')} />
                 <MetricPill label="Actions" value={String(advice.recommended_actions.length)} />
               </div>
               {advice.reasoning_method && !advice.reasoning_method.includes('fallback') && (
-                <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300">
+                <div className="mt-2 inline-flex items-center gap-2 rounded-md border border-cyan-500/20 bg-cyan-500/10 px-2.5 py-1 text-[10px] text-cyan-300">
                   <span className="font-medium">AI Reasoning</span>
                   <span className="text-cyan-400">{advice.reasoning_method}</span>
                 </div>
@@ -1228,12 +1260,12 @@ function CompactRiskSummary({ result }: { result: StrandsShipmentRiskResponse })
       </div>
 
       {topActions.length > 0 && (
-        <div className="mt-5 border-t border-slate-800/80 pt-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-white">Immediate Actions</h3>
-            <span className="text-xs text-slate-500">Owner tagged</span>
+        <div className="mt-3 border-t border-slate-800/80 pt-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold text-white">Immediate Actions</h3>
+            <span className="text-[10px] text-slate-500">Owner tagged</span>
           </div>
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 xl:grid-cols-3">
             {topActions.map((action, index) => (
               <ActionCard key={action} action={action} index={index} />
             ))}
@@ -1246,9 +1278,9 @@ function CompactRiskSummary({ result }: { result: StrandsShipmentRiskResponse })
 
 function MetricPill({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold text-slate-100">{value}</div>
+    <div className="rounded-md border border-slate-800 bg-slate-950/70 px-2.5 py-1.5">
+      <div className="text-[9px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="truncate text-sm font-semibold text-slate-100">{value}</div>
     </div>
   );
 }
@@ -1257,16 +1289,16 @@ function ActionCard({ action, index }: { action: string; index: number }) {
   const parsed = parseActionOwner(action);
 
   return (
-    <div className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/70 p-3 transition-colors hover:border-slate-700 hover:bg-slate-900/80">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-xs font-semibold text-primary-200">
+    <div className="min-w-0 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5 transition-colors hover:border-slate-700 hover:bg-slate-900/80">
+      <div className="mb-1.5 flex items-center gap-1.5">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-[10px] font-semibold text-primary-200">
                   {index + 1}
                 </span>
-        <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-200">
+        <span className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-200">
           {parsed.owner}
         </span>
       </div>
-      <p className="text-sm leading-6 text-slate-200">{parsed.text}</p>
+      <p className="text-xs leading-5 text-slate-200">{parsed.text}</p>
     </div>
   );
 }
@@ -1301,23 +1333,23 @@ function KeyRiskDrivers({ result, positionWeather }: { result: StrandsShipmentRi
   }
 
   return (
-    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl shadow-slate-950/30">
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <section className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 p-4 shadow-xl shadow-slate-950/30">
+      <div className="mb-3 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-orange-400/30 bg-orange-400/10 text-orange-300">
-            <AlertCircle className="h-4 w-4" />
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-orange-400/30 bg-orange-400/10 text-orange-300">
+            <AlertCircle className="h-3.5 w-3.5" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-white">What Affects This Shipment</h2>
-            <p className="text-xs text-slate-500">Ranked model drivers with route evidence</p>
+            <h2 className="text-base font-semibold text-white">What Affects This Shipment</h2>
+            <p className="text-[10px] text-slate-500">Ranked model drivers with route evidence</p>
           </div>
         </div>
-        <span className="w-fit rounded-full border border-slate-700 bg-slate-950/70 px-3 py-1 text-xs text-slate-400">
+        <span className="w-fit rounded-full border border-slate-700 bg-slate-950/70 px-2.5 py-0.5 text-[10px] text-slate-400">
           Top {topDrivers.length}
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
         {topDrivers.map(([feature, value]) => {
           const explanation = driverExplanation(feature);
           const relatedEvent = evidenceEvents.find((e) => {
@@ -1331,30 +1363,30 @@ function KeyRiskDrivers({ result, positionWeather }: { result: StrandsShipmentRi
           const eventLink = relatedEvent ? getEventLink(relatedEvent) : '';
 
           return (
-            <article key={feature} className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 p-4 transition-colors hover:border-slate-700">
+            <article key={feature} className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 p-3 transition-colors hover:border-slate-700">
               <div className={`absolute inset-y-0 left-0 w-1 ${level.bar}`} />
-              <div className="flex items-start justify-between gap-3 pl-2">
+              <div className="flex items-start justify-between gap-2 pl-2">
                 <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="text-sm font-medium text-white">{FEATURE_LABELS[feature] || feature}</span>
-                    <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-mono ${level.badge}`}>
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-xs font-medium text-white">{FEATURE_LABELS[feature] || feature}</span>
+                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-mono ${level.badge}`}>
                       {value.toFixed(1)}
                     </span>
                   </div>
-                  <p className="text-sm leading-6 text-slate-300">{explanation}</p>
+                  <p className="text-xs leading-5 text-slate-300">{explanation}</p>
                   {relatedEvent && (
                     <a
                       href={eventLink || undefined}
                       target={eventLink ? '_blank' : undefined}
                       rel={eventLink ? 'noopener noreferrer' : undefined}
-                      className={`mt-3 inline-flex max-w-full items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-cyan-200 transition-colors ${eventLink ? 'hover:border-cyan-400/40 hover:text-cyan-100' : 'cursor-default'}`}
+                      className={`mt-1.5 inline-flex max-w-full items-center gap-1 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[10px] text-cyan-200 transition-colors ${eventLink ? 'hover:border-cyan-400/40 hover:text-cyan-100' : 'cursor-default'}`}
                     >
-                      <LinkIcon className="h-3 w-3" />
+                      <LinkIcon className="h-2.5 w-2.5" />
                       <span className="truncate">Source: {relatedEvent.title}</span>
                     </a>
                   )}
                 </div>
-                <div className={`mt-1 h-3 w-3 shrink-0 rounded-full ${level.dot}`} />
+                <div className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${level.dot}`} />
               </div>
             </article>
           );
@@ -1363,32 +1395,32 @@ function KeyRiskDrivers({ result, positionWeather }: { result: StrandsShipmentRi
 
       {/* Live weather/marine conditions (medium+ severity) */}
       {liveConditions.length > 0 && (
-        <div className="mt-4">
-          <div className="mb-2 flex items-center gap-2 text-xs text-slate-500">
-            <CloudSun className="h-3.5 w-3.5" />
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center gap-2 text-[10px] text-slate-500">
+            <CloudSun className="h-3 w-3" />
             <span className="uppercase tracking-wide">Live conditions at vessel position</span>
           </div>
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
             {liveConditions.map((cond) => {
               const condLevel = driverLevel(cond.severity === 'critical' ? 9 : cond.severity === 'high' ? 7 : 5);
               return (
-                <article key={cond.type} className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 p-4 transition-colors hover:border-slate-700">
+                <article key={cond.type} className="group relative overflow-hidden rounded-lg border border-slate-800 bg-slate-950/60 p-3 transition-colors hover:border-slate-700">
                   <div className={`absolute inset-y-0 left-0 w-1 ${condLevel.bar}`} />
-                  <div className="flex items-start justify-between gap-3 pl-2">
+                  <div className="flex items-start justify-between gap-2 pl-2">
                     <div className="min-w-0 flex-1">
-                      <div className="mb-2 flex items-center gap-2">
-                        <span className="text-sm font-medium text-white">{cond.title}</span>
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold uppercase ${condLevel.badge}`}>
+                      <div className="mb-1 flex items-center gap-2">
+                        <span className="text-xs font-medium text-white">{cond.title}</span>
+                        <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${condLevel.badge}`}>
                           {cond.severity}
                         </span>
                       </div>
-                      <p className="text-sm leading-6 text-slate-300">{cond.detail}</p>
-                      <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-400/5 px-2 py-0.5 text-[10px] text-cyan-300">
+                      <p className="text-xs leading-5 text-slate-300">{cond.detail}</p>
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-400/5 px-2 py-0.5 text-[9px] text-cyan-300">
                         <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
                         Live data
                       </span>
                     </div>
-                    <div className={`mt-1 h-3 w-3 shrink-0 rounded-full ${condLevel.dot}`} />
+                    <div className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${condLevel.dot}`} />
                   </div>
                 </article>
               );

@@ -152,7 +152,7 @@ def fetch_realtime_news() -> list[dict[str, Any]]:
     Falls back to realistic synthetic data when live feeds are unreachable.
 
     Returns:
-        List of normalized events for Gemini cross-reference
+        List of normalized events for cross-reference analysis
     """
     all_events = []
 

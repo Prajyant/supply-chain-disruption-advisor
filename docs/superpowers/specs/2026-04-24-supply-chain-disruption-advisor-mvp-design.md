@@ -16,7 +16,7 @@ This document describes the MVP design for the Supply Chain Disruption Advisor s
 app/
  ├── ingestion/          # Data loaders (emails, news, inventory)
  ├── risk_engine/        # Risk classification and scoring
- ├── rag/               # Retrieval + LLM (LangChain/Gemini/FAISS)
+ ├── rag/               # Retrieval + LLM (LangChain/Bedrock/FAISS)
  ├── graph/             # Digital twin - network model and propagation
  ├── services/          # Service layer - orchestrates modules
  │   ├── ingestion_service.py
@@ -124,7 +124,7 @@ ingestion_complete {events_count, risks_count}
 
 **Functionality:**
 - RAG-grounded responses using LangChain
-- Gemini LLM for reasoning
+- Bedrock LLM for reasoning
 - FAISS for semantic search
 - Mitigation recommendations
 
@@ -166,7 +166,7 @@ ingestion_complete {events_count, risks_count}
 
 ### Backend
 - **Framework:** FastAPI
-- **LLM:** Gemini via LangChain
+- **LLM:** Amazon Bedrock (Claude)
 - **Vector DB:** FAISS
 - **Auth:** JWT + Pydantic
 - **Background Jobs:** Celery or asyncio tasks
