@@ -1020,6 +1020,139 @@ def _find_nearest_fallback_weather(lat: float, lon: float) -> dict:
     }
 
 
+# ==================== EMAIL ENDPOINTS ====================
+
+
+class SendEmailRequest(BaseModel):
+    to: list[str]
+    subject: str
+    body_html: str
+    body_text: str | None = None
+    cc: list[str] | None = None
+    bcc: list[str] | None = None
+
+
+class SendRiskAlertRequest(BaseModel):
+    to: list[str] | None = None  # If None, uses SES_ALERT_RECIPIENTS
+    risk_severity: str
+    risk_headline: str
+    supplier: str = ""
+    disruption_type: str = ""
+    recommendations: list[str] | None = None
+
+
+@router.post("/email/send")
+def send_email(req: SendEmailRequest) -> dict:
+    """Send a custom email via AWS SES.
+
+    Args:
+        req: Email request with recipients, subject, and body.
+
+    Returns:
+        Send result with message ID.
+    """
+    from app.services.email_service import EmailService, EmailRequest
+
+    service = EmailService()
+    result = service.send_email(EmailRequest(
+        to=req.to,
+        subject=req.subject,
+        body_html=req.body_html,
+        body_text=req.body_text,
+        cc=req.cc,
+        bcc=req.bcc,
+    ))
+
+    if not result.success:
+        raise HTTPException(status_code=500, detail=result.error)
+    return {"message_id": result.message_id, "status": "sent"}
+
+
+@router.post("/email/risk-alert")
+def send_risk_alert_email(req: SendRiskAlertRequest) -> dict:
+    """Send a risk alert email to stakeholders.
+
+    If no recipients are specified, uses the SES_ALERT_RECIPIENTS env var.
+
+    Args:
+        req: Risk alert details.
+
+    Returns:
+        Send result with message ID.
+    """
+    from app.services.email_service import EmailService
+    from app.core.config import get_settings
+
+    service = EmailService()
+    settings = get_settings()
+
+    recipients = req.to
+    if not recipients:
+        raw = settings.ses_alert_recipients
+        recipients = [e.strip() for e in raw.split(",") if e.strip()] if raw else []
+
+    if not recipients:
+        raise HTTPException(
+            status_code=400,
+            detail="No recipients specified and SES_ALERT_RECIPIENTS not configured.",
+        )
+
+    result = service.send_risk_alert(
+        to=recipients,
+        risk_severity=req.risk_severity,
+        risk_headline=req.risk_headline,
+        supplier=req.supplier,
+        disruption_type=req.disruption_type,
+        recommendations=req.recommendations,
+    )
+
+    if not result.success:
+        raise HTTPException(status_code=500, detail=result.error)
+    return {"message_id": result.message_id, "status": "sent"}
+
+
+@router.post("/email/test")
+def send_test_email() -> dict:
+    """Send a test email to verify SES configuration.
+
+    Sends to the configured SES_ALERT_RECIPIENTS.
+    """
+    from app.services.email_service import EmailService, EmailRequest
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    recipients = [e.strip() for e in settings.ses_alert_recipients.split(",") if e.strip()]
+
+    if not recipients:
+        raise HTTPException(
+            status_code=400,
+            detail="SES_ALERT_RECIPIENTS not configured. Set it in .env to test.",
+        )
+
+    service = EmailService()
+    result = service.send_email(EmailRequest(
+        to=recipients,
+        subject="[Test] Supply Chain Advisor — Email Configuration Verified",
+        body_html="""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
+            <h2>✅ Email Configuration Working</h2>
+            <p>Your AWS SES integration is configured correctly. The Supply Chain Disruption Advisor can now send:</p>
+            <ul>
+                <li>Risk alert notifications</li>
+                <li>Playbook trigger notifications</li>
+                <li>Shipment delay alerts</li>
+            </ul>
+            <p style="color: #6b7280; font-size: 12px;">This is a test email from the Supply Chain Disruption Advisor.</p>
+        </div>
+        """,
+        body_text="Email configuration verified. AWS SES integration is working correctly.",
+    ))
+
+    if not result.success:
+        raise HTTPException(status_code=500, detail=result.error)
+    return {"message_id": result.message_id, "status": "sent", "recipients": recipients}
+
+
 # ==================== HEALTH ENDPOINT ====================
 
 

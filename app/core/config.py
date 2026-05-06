@@ -25,6 +25,10 @@ class Settings(BaseModel):
     aws_session_token: str | None = os.getenv("AWS_SESSION_TOKEN") or None
     aws_region: str = os.getenv("AWS_REGION", "us-east-1")
     bedrock_model_id: str = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+    # AWS SES Email
+    ses_sender_email: str = os.getenv("SES_SENDER_EMAIL", "")
+    ses_region: str | None = os.getenv("SES_REGION") or None
+    ses_alert_recipients: str = os.getenv("SES_ALERT_RECIPIENTS", "")
 
 
 @lru_cache(maxsize=1)
