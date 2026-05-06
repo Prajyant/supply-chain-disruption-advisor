@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { loadDemoShipments } from '../services/shipmentData';
 import { useShipmentStore } from '../store/shipmentStore';
 import { shipmentApi } from '../services/api';
+import { MaritimeIntelligence } from '../components/MaritimeIntelligence';
 import {
   AreaChart,
   Area,
@@ -12,7 +13,10 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { ShieldAlert, Calendar, Lock, ArrowRight, AlertTriangle, ChevronDown, Package, Loader2, ExternalLink } from 'lucide-react';
+import {
+  ShieldAlert, Calendar, Lock, ArrowRight, AlertTriangle,
+  ChevronDown, Package, Loader2, ExternalLink,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // ─── Hardcoded 30-day trend data with spike in last week ───────────────────
@@ -23,7 +27,6 @@ function generateTrendData() {
     const date = new Date(today);
     date.setDate(today.getDate() - i);
     const label = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    // Baseline ~$2–4M, spikes in last 7 days to $8–12M
     let exposure: number;
     if (i <= 6) {
       exposure = 6_000_000 + Math.random() * 6_000_000;
@@ -44,6 +47,12 @@ function formatMillions(n: number) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
   return `$${n.toLocaleString()}`;
+}
+
+function formatMillionsRaw(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return `${n.toLocaleString()}`;
 }
 
 function riskLevelFromScore(score: number): 'critical' | 'high' | 'medium' | 'low' {
@@ -84,7 +93,6 @@ export function CFODashboard() {
 
   const { uploadedShipments } = useShipmentStore();
 
-  // Derive financial exposure from shipments (uploaded or demo)
   const allShipments = uploadedShipments
     ? [...demoShipments, ...uploadedShipments.filter(u => !demoShipments.some(d => d.shipment_id === u.shipment_id))]
     : demoShipments;
@@ -105,7 +113,6 @@ export function CFODashboard() {
     else if (materialLower.includes('chemical') || materialLower.includes('plastic')) unitValue = 12;
     else if (s.declared_value_usd > 0 && s.quantity > 0) unitValue = s.declared_value_usd / s.quantity;
 
-    // Calculate risk score from actual shipment data instead of random
     let riskScore = 3.0;
     if (s.inventory_days_cover <= 5) riskScore += 3.0;
     else if (s.inventory_days_cover <= 10) riskScore += 2.0;
@@ -128,15 +135,18 @@ export function CFODashboard() {
   const highCount = shipmentRows.filter(r => r.level === 'high').length;
   const totalExposure = highCritical.reduce((s, r) => s + r.exposure, 0);
 
+  const selectedShipment = allShipments.find(s => s.shipment_id === selectedShipmentId);
+  const selectedRow = shipmentRows.find(r => r.shipment_id === selectedShipmentId);
+
   const boardActions = [
     criticalCount > 0
-      ? `Authorize emergency procurement budget of up to ${formatMillions(totalExposure * 0.15)} to cover alternate supplier costs for ${criticalCount} critical shipment${criticalCount > 1 ? 's' : ''}.`
+      ? `Authorize emergency procurement budget of up to ${formatMillionsRaw(totalExposure * 0.15)} to cover alternate supplier costs for ${criticalCount} critical shipment${criticalCount > 1 ? 's' : ''}.`
       : null,
     highCount > 0
       ? `Approve activation of secondary supplier agreements for ${highCount} high-risk shipment${highCount > 1 ? 's' : ''} to maintain production continuity.`
       : null,
     `Direct logistics leadership to provide a 48-hour recovery plan for all shipments with inventory cover below 10 days.`,
-    `Review insurance coverage adequacy given current exposure of ${formatMillions(totalExposure)} across active high-risk shipments.`,
+    `Review insurance coverage adequacy given current exposure of ${formatMillionsRaw(totalExposure)} across active high-risk shipments.`,
   ].filter(Boolean) as string[];
 
   const trendDollars = TREND_DATA.map(d => ({
@@ -179,14 +189,20 @@ export function CFODashboard() {
               className="w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-lg border border-slate-700 bg-slate-800 hover:border-slate-600 transition-colors text-left"
             >
               <span className={`text-sm ${selectedShipmentId ? 'text-white' : 'text-slate-400'}`}>
-                {allShipments.find(s => s.shipment_id === selectedShipmentId)
-                  ? `${selectedShipmentId} — ${allShipments.find(s => s.shipment_id === selectedShipmentId)!.supplier}`
+                {selectedShipment
+                  ? `${selectedShipmentId} — ${selectedShipment.supplier}`
                   : 'Select a shipment for detailed financial analysis...'}
               </span>
               <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
             </button>
             {dropdownOpen && (
               <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800 shadow-xl">
+                <button
+                  onClick={() => { setSelectedShipmentId(null); setDropdownOpen(false); }}
+                  className="w-full text-left px-4 py-2.5 hover:bg-slate-700/50 transition-colors border-b border-slate-700/50 text-slate-400 text-sm"
+                >
+                  Show global overview (no selection)
+                </button>
                 {allShipments.map((s) => (
                   <button
                     key={s.shipment_id}
@@ -197,7 +213,7 @@ export function CFODashboard() {
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-white">{s.shipment_id}</span>
-                      <span className="text-xs text-slate-500">${(s.declared_value_usd / 1000).toFixed(0)}K</span>
+                      <span className="text-xs text-slate-500">{formatMillions(s.declared_value_usd)}</span>
                     </div>
                     <div className="text-xs text-slate-400 mt-0.5">
                       {s.supplier} · {s.origin} → {s.destination} · {s.material}
@@ -218,66 +234,60 @@ export function CFODashboard() {
         </div>
 
         {/* Selected Shipment Financial Detail */}
-        {selectedShipmentId && (() => {
-          const row = shipmentRows.find(r => r.shipment_id === selectedShipmentId);
-          if (!row) return null;
-          return (
-            <div className="mt-5 pt-5 border-t border-slate-800">
-              {analysisLoading ? (
-                <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Loading analysis...
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Financial Exposure</p>
-                    <p className="text-lg font-bold text-amber-400 mt-0.5">${formatMillions(row.exposure)}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Risk Score</p>
-                    <p className={`text-lg font-bold mt-0.5 ${row.level === 'critical' ? 'text-red-400' : row.level === 'high' ? 'text-orange-400' : 'text-yellow-400'}`}>
-                      {selectedAnalysis?.result?.risk_score ?? row.riskScore}/10
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Inventory Cover</p>
-                    <p className={`text-lg font-bold mt-0.5 ${row.inventory_days_cover <= 7 ? 'text-red-400' : row.inventory_days_cover <= 14 ? 'text-yellow-400' : 'text-green-400'}`}>
-                      {row.inventory_days_cover}d
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Declared Value</p>
-                    <p className="text-lg font-bold text-white mt-0.5">${formatMillions(row.declared_value_usd)}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Supplier Delays</p>
-                    <p className={`text-lg font-bold mt-0.5 ${row.supplier_delay_count >= 3 ? 'text-orange-400' : 'text-slate-200'}`}>
-                      {row.supplier_delay_count}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Action Required</p>
-                    <p className="text-xs font-medium text-slate-300 mt-1">{ACTION_FOR_LEVEL[row.level]}</p>
-                  </div>
-                </div>
-              )}
+        {selectedRow && (
+          <div className="mt-5 pt-5 border-t border-slate-800">
+            {analysisLoading ? (
+              <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading analysis...
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                <CFOMetricCard label="Financial Exposure" value={formatMillions(selectedRow.exposure)} color="text-amber-400" />
+                <CFOMetricCard
+                  label="Risk Score"
+                  value={`${selectedAnalysis?.result?.risk_score ?? selectedRow.riskScore}/10`}
+                  color={selectedRow.level === 'critical' ? 'text-red-400' : selectedRow.level === 'high' ? 'text-orange-400' : 'text-yellow-400'}
+                />
+                <CFOMetricCard
+                  label="Inventory Cover"
+                  value={`${selectedRow.inventory_days_cover}d`}
+                  color={selectedRow.inventory_days_cover <= 7 ? 'text-red-400' : selectedRow.inventory_days_cover <= 14 ? 'text-yellow-400' : 'text-green-400'}
+                />
+                <CFOMetricCard label="Declared Value" value={formatMillions(selectedRow.declared_value_usd)} color="text-white" />
+                <CFOMetricCard
+                  label="Supplier Delays"
+                  value={String(selectedRow.supplier_delay_count)}
+                  color={selectedRow.supplier_delay_count >= 3 ? 'text-orange-400' : 'text-slate-200'}
+                />
+                <CFOMetricCard label="Action Required" value={ACTION_FOR_LEVEL[selectedRow.level]} color="text-slate-300" isSmall />
+              </div>
+            )}
 
-              {/* Signals from preloaded analysis */}
-              {selectedAnalysis?.result?.signals && selectedAnalysis.result.signals.length > 0 && (
-                <div className="mt-4 p-4 rounded-lg bg-amber-500/5 border border-amber-500/20">
-                  <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide mb-2">Risk Signals</p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedAnalysis.result.signals.map((signal: string, i: number) => (
-                      <span key={i} className="text-xs px-2.5 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                        {signal}
-                      </span>
-                    ))}
-                  </div>
+            {/* Signals */}
+            {selectedAnalysis?.result?.signals && selectedAnalysis.result.signals.length > 0 && (
+              <div className="mt-4 p-4 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide mb-2">Risk Signals</p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedAnalysis.result.signals.map((signal: string, i: number) => (
+                    <span key={i} className="text-xs px-2.5 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                      {signal}
+                    </span>
+                  ))}
                 </div>
-              )}
-            </div>
-          );
-        })()}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* ── Maritime Intelligence (scoped to selected shipment or global) ── */}
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+        <MaritimeIntelligence
+          selectedOrigin={selectedShipment?.origin || null}
+          selectedDestination={selectedShipment?.destination || null}
+          selectedVesselImo={selectedShipment?.imo_number || null}
+          selectedVesselName={selectedShipment?.vessel_name || null}
+        />
       </section>
 
       {/* ── Hero Metric ── */}
@@ -303,7 +313,7 @@ export function CFODashboard() {
           </div>
           <div className="w-px bg-slate-800 self-stretch" />
           <div className="text-center">
-            <div className="text-4xl font-bold text-slate-300">{demoShipments.length}</div>
+            <div className="text-4xl font-bold text-slate-300">{allShipments.length}</div>
             <div className="text-xs text-slate-500 uppercase tracking-wide mt-1">Total</div>
           </div>
         </div>
@@ -319,13 +329,17 @@ export function CFODashboard() {
                 <th className="text-left px-5 py-3 text-slate-500 font-medium">Shipment</th>
                 <th className="text-left px-5 py-3 text-slate-500 font-medium">Route</th>
                 <th className="text-left px-5 py-3 text-slate-500 font-medium">Risk Level</th>
-                <th className="text-right px-5 py-3 text-slate-500 font-medium">$ Exposure</th>
+                <th className="text-right px-5 py-3 text-slate-500 font-medium">Exposure</th>
                 <th className="text-left px-5 py-3 text-slate-500 font-medium">Action Required</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
               {shipmentRows.slice(0, 8).map((row) => (
-                <tr key={row.shipment_id} className="hover:bg-slate-900/40 transition-colors">
+                <tr
+                  key={row.shipment_id}
+                  onClick={() => { setSelectedShipmentId(row.shipment_id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  className={`hover:bg-slate-900/40 transition-colors cursor-pointer ${row.shipment_id === selectedShipmentId ? 'bg-amber-500/5 border-l-2 border-l-amber-500' : ''}`}
+                >
                   <td className="px-5 py-4">
                     <div className="font-medium text-white">{row.supplier}</div>
                     <div className="text-xs text-slate-500 font-mono">{row.shipment_id}</div>
@@ -430,6 +444,16 @@ export function CFODashboard() {
         </p>
       </footer>
 
+    </div>
+  );
+}
+
+
+function CFOMetricCard({ label, value, color, isSmall }: { label: string; value: string; color: string; isSmall?: boolean }) {
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+      <p className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</p>
+      <p className={`${isSmall ? 'text-xs mt-1' : 'text-lg mt-0.5'} font-bold ${color}`}>{value}</p>
     </div>
   );
 }
