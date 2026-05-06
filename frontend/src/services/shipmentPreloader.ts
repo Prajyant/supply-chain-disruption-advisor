@@ -38,6 +38,8 @@ export async function triggerShipmentPreload(): Promise<void> {
 export async function getPreloadedAnalysis(shipmentId: string): Promise<any | null> {
   try {
     const res = await shipmentApi.getPreloadedAnalysis(shipmentId);
+    // Return null if the backend returned an empty object (not yet preloaded)
+    if (!res.data || Object.keys(res.data).length === 0) return null;
     return res.data;
   } catch {
     return null;

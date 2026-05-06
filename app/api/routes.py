@@ -3,7 +3,7 @@ import asyncio
 import logging
 from typing import Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, status, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.models.schemas import (
@@ -233,6 +233,85 @@ async def get_vessel_by_imo(imo_number: str) -> dict:
     if not vessel:
         raise HTTPException(status_code=404, detail=f"No vessel found for IMO {imo_number}")
     return vessel
+
+
+@router.post("/shipments/upload-csv")
+async def upload_shipments_csv(file: UploadFile = File(...)) -> dict:
+    """Upload a CSV file with shipment data.
+
+    Parses the CSV and returns structured shipment objects that the frontend
+    can use for risk analysis and vessel tracking.
+    """
+    import csv
+    import io
+
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a .csv")
+
+    try:
+        content = await file.read()
+        text = content.decode("utf-8-sig")  # Handle BOM from Excel
+        reader = csv.DictReader(io.StringIO(text))
+
+        shipments = []
+        for row in reader:
+            # Skip empty rows
+            if not any(row.values()):
+                continue
+
+            def safe_float(val):
+                try:
+                    return float(val) if val and val.strip() else None
+                except (ValueError, TypeError):
+                    return None
+
+            def safe_int(val):
+                try:
+                    return int(float(val)) if val and val.strip() else 0
+                except (ValueError, TypeError):
+                    return 0
+
+            imo = (row.get("imo_number") or "").strip()
+            lat = safe_float(row.get("vessel_latitude"))
+            lon = safe_float(row.get("vessel_longitude"))
+
+            shipment = {
+                "shipment_id": (row.get("shipment_id") or f"SHP-{len(shipments)+1:04d}").strip(),
+                "supplier": (row.get("supplier") or "Unknown").strip(),
+                "origin": (row.get("origin") or "").strip(),
+                "destination": (row.get("destination") or "").strip(),
+                "route_nodes": [n.strip() for n in (row.get("route_nodes") or "").split("|") if n.strip()],
+                "imo_number": imo or None,
+                "mmsi": (row.get("mmsi") or "").strip() or None,
+                "vessel_name": (row.get("vessel_name") or "").strip() or None,
+                "vessel_latitude": lat,
+                "vessel_longitude": lon,
+                "vessel_status": (row.get("vessel_status") or "").strip() or None,
+                "vessel_speed_knots": safe_float(row.get("vessel_speed_knots")),
+                "vessel_course_degrees": safe_float(row.get("vessel_course_degrees")),
+                "vessel_progress_percent": safe_float(row.get("vessel_progress_percent")),
+                "transport_mode": "sea",
+                "material": (row.get("material") or "general cargo").strip(),
+                "quantity": safe_float(row.get("quantity")) or 0,
+                "lead_time_days": safe_float(row.get("lead_time_days")) or 0,
+                "inventory_days_cover": safe_float(row.get("inventory_days_cover")) or 0,
+                "supplier_delay_count": safe_int(row.get("supplier_delay_count")),
+                "priority": (row.get("priority") or "1").strip(),
+                "declared_value_usd": safe_float(row.get("declared_value_usd")) or 0,
+                "departure_date": (row.get("departure_date") or "").strip() or None,
+                "eta_date": (row.get("eta_date") or "").strip() or None,
+            }
+            shipments.append(shipment)
+
+        logger.info(f"CSV upload: parsed {len(shipments)} shipments from {file.filename}")
+        return {
+            "shipments": shipments,
+            "count": len(shipments),
+            "filename": file.filename,
+        }
+    except Exception as e:
+        logger.error(f"CSV upload failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to parse CSV: {str(e)}")
 
 
 @router.post("/shipments/risk-score", response_model=ShipmentRiskResponse)
@@ -586,12 +665,12 @@ async def preload_shipment_analyses(
 async def get_preloaded_analysis(shipment_id: str) -> dict:
     """Get a preloaded shipment analysis from cache.
 
-    Returns the cached analysis if available, or a 404 if not yet preloaded.
-    The frontend can fall back to the live analysis endpoint if this returns 404.
+    Returns the cached analysis if available, or empty dict if not yet preloaded.
+    The frontend falls back to the live analysis endpoint if this returns empty.
     """
     if shipment_id in _shipment_analysis_cache:
         return _shipment_analysis_cache[shipment_id]
-    raise HTTPException(status_code=404, detail="Analysis not yet preloaded")
+    return {}
 
 
 @router.get("/shipments/preload/status")
@@ -601,6 +680,68 @@ async def preload_status() -> dict:
         "in_progress": _preload_in_progress,
         "cached_count": len(_shipment_analysis_cache),
         "cached_ids": list(_shipment_analysis_cache.keys()),
+    }
+
+
+@router.get("/shipments/risk-summary")
+async def get_risk_summary() -> dict:
+    """Get aggregate risk metrics from all analyzed shipments.
+
+    Returns counts by risk level, average score, and top risks.
+    Uses the preloaded analysis cache.
+    """
+    if not _shipment_analysis_cache:
+        return {
+            "total_analyzed": 0,
+            "critical": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "avg_risk_score": 0.0,
+            "top_risks": [],
+        }
+
+    critical = 0
+    high = 0
+    medium = 0
+    low = 0
+    total_score = 0.0
+    top_risks = []
+
+    for shipment_id, analysis in _shipment_analysis_cache.items():
+        result = analysis.get("result", {})
+        risk_level = result.get("risk_level", "low").lower()
+        risk_score = result.get("risk_score", 0.0)
+        total_score += risk_score
+
+        if risk_level == "critical":
+            critical += 1
+        elif risk_level == "high":
+            high += 1
+        elif risk_level == "medium":
+            medium += 1
+        else:
+            low += 1
+
+        top_risks.append({
+            "shipment_id": shipment_id,
+            "risk_level": risk_level,
+            "risk_score": risk_score,
+            "supplier": result.get("shipment_id", shipment_id),
+        })
+
+    # Sort by risk score descending
+    top_risks.sort(key=lambda x: x["risk_score"], reverse=True)
+
+    total = len(_shipment_analysis_cache)
+    return {
+        "total_analyzed": total,
+        "critical": critical,
+        "high": high,
+        "medium": medium,
+        "low": low,
+        "avg_risk_score": round(total_score / total, 2) if total > 0 else 0.0,
+        "top_risks": top_risks[:10],
     }
 
 

@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react';
 import { MapContainer, Marker, Popup, TileLayer, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { getFlightByCallsign, getFlightStatus, type FlightData } from '../services/flightTracker';
 import { RouteLines } from './RouteLines';
 import { FitViewport } from './FitViewport';
 import { WeatherOverlay } from './WeatherOverlay';
@@ -38,6 +36,7 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   karachi: [24.8607, 67.0011],
   dubai: [25.2048, 55.2708],
   jeddah: [21.5433, 39.1728],
+  ras_tanura: [26.6400, 50.1600],
   // Europe
   rotterdam: [51.9225, 4.4792],
   hamburg: [53.5511, 9.9937],
@@ -76,6 +75,7 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   tangier: [35.7595, -5.8340],
   casablanca: [33.5731, -7.5898],
   alexandria: [31.2001, 29.9187],
+  lagos: [6.4541, 3.3947],
   // Oceania
   sydney: [-33.8688, 151.2093],
   melbourne: [-37.8136, 144.9631],
@@ -84,8 +84,20 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
 
 function getPortCoordinates(location?: string): [number, number] | undefined {
   if (!location) return undefined;
+  // Try exact match with normalized key (lowercase, no special chars)
   const key = location.toLowerCase().replace(/[^a-z]/g, '');
-  return PORT_COORDINATES[key];
+  if (PORT_COORDINATES[key]) return PORT_COORDINATES[key];
+  // Try with underscores instead of spaces
+  const keyUnderscore = location.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z_]/g, '');
+  if (PORT_COORDINATES[keyUnderscore]) return PORT_COORDINATES[keyUnderscore];
+  // Try partial match (first word)
+  const firstWord = location.toLowerCase().split(/\s+/)[0].replace(/[^a-z]/g, '');
+  for (const [portKey, coords] of Object.entries(PORT_COORDINATES)) {
+    if (portKey.startsWith(firstWord) || portKey.includes(firstWord)) {
+      return coords;
+    }
+  }
+  return undefined;
 }
 
 interface VesselMapProps {
@@ -119,9 +131,8 @@ function getStatusColor(status?: string): string {
   return STATUS_COLORS.default;
 }
 
-function createCustomIcon(color: string, isAir: boolean = false): L.DivIcon {
+function createCustomIcon(color: string): L.DivIcon {
   const vesselSvg = `<path d="M12 2L2 22h20L12 2zm0 4l7 14H5l7-14z"/>`;
-  const planeSvg = `<path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>`;
 
   return L.divIcon({
     className: 'custom-vessel-icon',
@@ -138,7 +149,7 @@ function createCustomIcon(color: string, isAir: boolean = false): L.DivIcon {
         justify-content: center;
       ">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-          ${isAir ? planeSvg : vesselSvg}
+          ${vesselSvg}
         </svg>
       </div>
     `,
@@ -158,9 +169,6 @@ export function VesselMap({
   progress,
   transportMode = 'sea',
 }: VesselMapProps) {
-  const [flightData, setFlightData] = useState<FlightData | null>(null);
-  const [isRealtime, setIsRealtime] = useState(false);
-
   // Get coordinates from port names
   const originCoords = getPortCoordinates(origin);
   const destCoords = getPortCoordinates(destination);
@@ -169,30 +177,7 @@ export function VesselMap({
   const vesselLat = latitude ?? 20;
   const vesselLon = longitude ?? 0;
 
-  // Fetch realtime flight data for air shipments
-  useEffect(() => {
-    if (transportMode === 'air' && vesselName) {
-      const fetchFlightData = async () => {
-        try {
-          const data = await getFlightByCallsign(vesselName);
-          if (data) {
-            setFlightData(data);
-            setIsRealtime(true);
-          }
-        } catch (error) {
-          console.error('Failed to fetch flight data:', error);
-        }
-      };
-
-      fetchFlightData();
-
-      // Poll for updates every 30 seconds
-      const interval = setInterval(fetchFlightData, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [transportMode, vesselName]);
-
-  if (typeof latitude !== 'number' && !flightData) {
+  if (typeof latitude !== 'number') {
     return (
       <div className="flex h-64 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/50 text-slate-500">
         <p className="text-sm">Position not available</p>
@@ -200,25 +185,17 @@ export function VesselMap({
     );
   }
 
-  const currentLat = flightData?.latitude ?? vesselLat;
-  const currentLon = flightData?.longitude ?? vesselLon;
-  const currentStatus = flightData ? getFlightStatus(flightData.status) : status;
-  const currentSpeed = flightData?.speed ?? speed;
+  const currentLat = vesselLat;
+  const currentLon = vesselLon;
+  const currentStatus = status;
+  const currentSpeed = speed;
   const statusColor = getStatusColor(currentStatus);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-white">
-            {transportMode === 'air' ? 'Live Flight Tracking' : 'Live Vessel Tracking'}
-          </h3>
-          {isRealtime && (
-            <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-              Live
-            </span>
-          )}
+          <h3 className="text-sm font-semibold text-white">Live Vessel Tracking</h3>
         </div>
         {currentStatus && (
           <span
@@ -283,20 +260,17 @@ export function VesselMap({
           {/* Current position marker */}
           <Marker
             position={[currentLat, currentLon]}
-            icon={createCustomIcon(statusColor, transportMode === 'air')}
+            icon={createCustomIcon(statusColor)}
           >
             <Popup>
               <div className="space-y-1 text-xs">
-                <div className="font-semibold">{vesselName || (transportMode === 'air' ? 'Unknown Flight' : 'Unknown Vessel')}</div>
+                <div className="font-semibold">{vesselName || 'Unknown Vessel'}</div>
                 {currentStatus && <div>Status: {currentStatus}</div>}
-                {currentSpeed && <div>Speed: {currentSpeed} {transportMode === 'air' ? 'kts' : 'kn'}</div>}
-                {flightData?.altitude && <div>Altitude: {flightData.altitude.toLocaleString()} ft</div>}
+                {currentSpeed && <div>Speed: {currentSpeed} kn</div>}
                 {progress !== undefined && <div>Progress: {progress}%</div>}
-                {flightData?.heading && <div>Heading: {flightData.heading}°</div>}
                 <div className="text-slate-500">
                   {currentLat.toFixed(4)}, {currentLon.toFixed(4)}
                 </div>
-                {isRealtime && <div className="text-green-400 font-medium">Live tracking active</div>}
               </div>
             </Popup>
           </Marker>
@@ -407,12 +381,6 @@ export function VesselMap({
           <div className="h-2 w-2 rounded-full bg-red-500" />
           <span className="text-slate-400">Delayed</span>
         </div>
-        {isRealtime && (
-          <div className="flex items-center gap-1.5">
-            <div className="h-2 w-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-green-400">Live</span>
-          </div>
-        )}
       </div>
     </div>
   );

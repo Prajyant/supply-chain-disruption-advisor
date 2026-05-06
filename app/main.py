@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.api.routes import router
+from app.api.vessel_routes import vessel_router
 from app.background.workers import WorkerManager, IngestionWorker, RiskWorker, PropagationWorker
+from app.ingestion.ais.vessel_worker import get_vessel_worker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -57,10 +59,17 @@ async def lifespan(app: FastAPI):
     await worker_manager.start_all()
     logger.info("Background workers started")
 
+    # Start vessel tracking worker
+    vessel_worker = get_vessel_worker()
+    vessel_worker.initialize()
+    await vessel_worker.start()
+    logger.info("Vessel tracking worker started")
+
     yield
 
     # Shutdown
     logger.info("Stopping background workers...")
+    await vessel_worker.stop()
     await worker_manager.stop_all()
     logger.info("Background workers stopped")
 
@@ -83,6 +92,9 @@ app.add_middleware(
 )
 
 # Include API routes
+# vessel_router first so /vessels/watchlist, /vessels/search etc. match before
+# the catch-all /vessels/{imo_number} in the main router
+app.include_router(vessel_router)
 app.include_router(router)
 
 

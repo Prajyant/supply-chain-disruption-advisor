@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { loadDemoShipments } from '../services/shipmentData';
+import { useShipmentStore } from '../store/shipmentStore';
 import { networkApi } from '../services/api';
 import ReactFlow, {
   Background,
@@ -38,6 +39,9 @@ export function OperationsDashboard() {
     queryKey: ['demo-shipments'],
     queryFn: loadDemoShipments,
   });
+
+  const { uploadedShipments } = useShipmentStore();
+  const shipments = uploadedShipments || demoShipments;
 
   const { data: network, isLoading: netLoading } = useQuery({
     queryKey: ['network'],
@@ -93,8 +97,8 @@ export function OperationsDashboard() {
     })));
   }, [network, setNodes, setEdges]);
 
-  // ── Derive disruptions from demo shipments ──────────────────────────────
-  const disruptions = demoShipments
+  // ── Derive disruptions from shipments ──────────────────────────────
+  const disruptions = shipments
     .map((s) => {
       const riskScore = 4 + Math.random() * 6;
       const level = riskScore >= 8 ? 'critical' : riskScore >= 6 ? 'high' : 'medium';
@@ -131,7 +135,7 @@ export function OperationsDashboard() {
       <div className="flex items-center justify-between px-8 pt-8 pb-4">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Operations Control Center</h1>
-          <p className="text-slate-400 text-sm mt-0.5">Live supply chain visibility · {demoShipments.length} active shipments</p>
+          <p className="text-slate-400 text-sm mt-0.5">Live supply chain visibility · {shipments.length} active shipments</p>
         </div>
         <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${criticalCount > 0 ? 'border-red-500/40 bg-red-500/10 text-red-300' : 'border-green-500/40 bg-green-500/10 text-green-300'}`}>
           <span className={`w-2 h-2 rounded-full animate-pulse ${criticalCount > 0 ? 'bg-red-400' : 'bg-green-400'}`} />
@@ -241,7 +245,7 @@ export function OperationsDashboard() {
               <span className="text-sm font-semibold text-white">Supply Chain Health Score</span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Based on {demoShipments.length} active shipments · {criticalCount} critical alert{criticalCount !== 1 ? 's' : ''}
+              Based on {shipments.length} active shipments · {criticalCount} critical alert{criticalCount !== 1 ? 's' : ''}
             </p>
           </div>
           <div className="flex-1 flex items-center gap-4 min-w-0">

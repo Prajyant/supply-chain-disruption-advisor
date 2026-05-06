@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { loadDemoShipments } from '../services/shipmentData';
+import { useShipmentStore } from '../store/shipmentStore';
 import {
   AreaChart,
   Area,
@@ -74,8 +75,10 @@ export function CFODashboard() {
     queryFn: loadDemoShipments,
   });
 
-  // Derive financial exposure from demo shipments (heuristic)
-  const shipmentRows = demoShipments.map((s) => {
+  const { uploadedShipments } = useShipmentStore();
+
+  // Derive financial exposure from shipments (uploaded or demo)
+  const shipmentRows = (uploadedShipments || demoShipments).map((s) => {
     const materialLower = s.material?.toLowerCase() ?? '';
     let unitValue = 20;
     if (materialLower.includes('electron') || materialLower.includes('chip')) unitValue = 50;

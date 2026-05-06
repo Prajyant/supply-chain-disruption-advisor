@@ -1,0 +1,96 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Red Sea / Bab-el-Mandeb",
+        "risk_weight": 25,
+        "color": "#ff3355",
+        "description": "Houthi attacks on commercial shipping, piracy risk"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[32.0, 12.0], [44.0, 12.0], [44.0, 30.0], [32.0, 30.0], [32.0, 12.0]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Gulf of Aden",
+        "risk_weight": 30,
+        "color": "#ff3355",
+        "description": "Piracy hotspot, proximity to Somalia and Yemen conflict"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[43.0, 10.0], [54.0, 10.0], [54.0, 15.0], [43.0, 15.0], [43.0, 10.0]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Strait of Hormuz",
+        "risk_weight": 20,
+        "color": "#ff8800",
+        "description": "Geopolitical chokepoint, Iran tensions, tanker seizure risk"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[54.0, 24.0], [58.0, 24.0], [58.0, 27.5], [54.0, 27.5], [54.0, 24.0]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Gulf of Guinea",
+        "risk_weight": 28,
+        "color": "#ff3355",
+        "description": "Piracy, armed robbery, kidnapping of crew"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-10.0, -5.0], [12.0, -5.0], [12.0, 8.0], [-10.0, 8.0], [-10.0, -5.0]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "South China Sea",
+        "risk_weight": 15,
+        "color": "#ff8800",
+        "description": "Territorial disputes, military exercises, fishing vessel conflicts"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[100.0, 0.0], [121.0, 0.0], [121.0, 23.0], [100.0, 23.0], [100.0, 0.0]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Malacca Strait",
+        "risk_weight": 18,
+        "color": "#ff8800",
+        "description": "Congestion chokepoint, piracy risk, grounding hazard"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[98.0, -2.0], [105.0, -2.0], [105.0, 8.0], [98.0, 8.0], [98.0, -2.0]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Somali Basin",
+        "risk_weight": 30,
+        "color": "#ff3355",
+        "description": "Piracy, armed attacks on commercial vessels"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[41.0, -2.0], [52.0, -2.0], [52.0, 12.0], [41.0, 12.0], [41.0, -2.0]]]
+      }
+    }
+  ]
+}

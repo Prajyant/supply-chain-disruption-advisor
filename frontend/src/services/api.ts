@@ -118,6 +118,7 @@ export const shipmentApi = {
   preloadAnalyses: (shipments: any[]) => api.post('/shipments/preload', shipments),
   getPreloadedAnalysis: (shipmentId: string) => api.get(`/shipments/${shipmentId}/preloaded`),
   getPreloadStatus: () => api.get('/shipments/preload/status'),
+  getRiskSummary: () => api.get('/shipments/risk-summary'),
   // risk-analysis: CSV upload & Strands risk analysis
   uploadCsv: (file: File) => {
     const formData = new FormData();

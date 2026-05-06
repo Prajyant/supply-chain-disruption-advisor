@@ -32,6 +32,8 @@ import { VesselMap } from '../components/VesselMap';
 import { DebugPanel } from '../components/DebugPanel';
 import { LiveWeatherBanner } from '../components/LiveWeatherBanner';
 import { getPositionWeather, type PositionWeatherData } from '../services/weatherService';
+import { fetchVesselStatus } from '../services/vesselApi';
+import { useShipmentStore } from '../store/shipmentStore';
 import { useState } from 'react';
 
 type StrandsStatus = {
@@ -77,7 +79,11 @@ export function ShipmentDetail() {
     queryFn: loadDemoShipments,
   });
 
-  const shipment = shipmentsQuery.data?.find((item) => item.shipment_id === shipmentId);
+  const { uploadedShipments } = useShipmentStore();
+
+  // Look up shipment from uploaded data first, then fall back to demo CSV
+  const shipment = uploadedShipments?.find((item) => item.shipment_id === shipmentId)
+    ?? shipmentsQuery.data?.find((item) => item.shipment_id === shipmentId);
 
   const analysisQuery = useQuery({
     queryKey: ['shipment-analysis', shipmentId],
@@ -110,6 +116,25 @@ export function ShipmentDetail() {
     staleTime: 3 * 60 * 1000,
   });
 
+  // Fetch live vessel position from backend AIS tracking
+  const liveVesselQuery = useQuery({
+    queryKey: ['live-vessel', shipment?.imo_number],
+    queryFn: () => fetchVesselStatus(shipment!.imo_number!),
+    enabled: Boolean(shipment?.imo_number),
+    refetchInterval: 60_000, // Refresh every 60 seconds
+    staleTime: 30_000,
+  });
+
+  // Use live data if available, fall back to CSV data
+  const vesselLat = liveVesselQuery.data?.latitude ?? shipment?.vessel_latitude;
+  const vesselLon = liveVesselQuery.data?.longitude ?? shipment?.vessel_longitude;
+  const vesselSpeed = liveVesselQuery.data?.speed ?? shipment?.vessel_speed_knots;
+  const vesselStatus = liveVesselQuery.data?.nav_status ?? liveVesselQuery.data?.status ?? shipment?.vessel_status;
+  const vesselName = liveVesselQuery.data?.name ?? shipment?.vessel_name;
+  // Origin/destination always from the supplier's CSV (the shipment contract), not the vessel's random demo route
+  const vesselOrigin = shipment?.origin;
+  const vesselDestination = shipment?.destination;
+
   if (shipmentsQuery.isLoading) {
     return <PageLoading label="Loading shipment record" />;
   }
@@ -136,12 +161,8 @@ export function ShipmentDetail() {
   const analysis = analysisQuery.data;
   const evidenceEvents = analysis?.result.evidence_events ?? [];
   const contextEvents = analysis?.result.context_events ?? [];
-  const isAir = shipment.transport_mode === 'air';
-  const isGround = shipment.transport_mode === 'ground';
 
   const weatherEvents = evidenceEvents.filter((event) => {
-    const isMarine = isEventSource(event, ['marine']);
-    if (isGround && isMarine) return false;
     return isEventSource(event, ['weather', 'marine']);
   });
   const worldEvents = evidenceEvents.filter((event) => isEventSource(event, ['trade', 'news']));
@@ -149,8 +170,8 @@ export function ShipmentDetail() {
   // For the Live Context panel, combine evidence + context events so it's never empty
   // Filter weather events to only show route-relevant ones
   const routeTerms = [
-    shipment.origin,
-    shipment.destination,
+    vesselOrigin || shipment.origin,
+    vesselDestination || shipment.destination,
     ...(shipment.route_nodes || []),
   ]
     .filter(Boolean)
@@ -175,15 +196,12 @@ export function ShipmentDetail() {
     return true; // news/trade events always included
   });
   const liveWeatherContextEvents = dedupedLiveEvents.filter((event) => {
-    const isMarine = isEventSource(event, ['marine']);
-    if (isGround && isMarine) return false;
     return isEventSource(event, ['weather', 'marine']);
   });
   const liveWorldContextEvents = dedupedLiveEvents.filter((event) => isEventSource(event, ['trade', 'news']));
   
   const vesselEvents = evidenceEvents.filter((event) => isEventSource(event, ['vessel']));
-  const flightEvents = evidenceEvents.filter((event) => isEventSource(event, ['flight']));
-  const telemetryEvents = isAir ? flightEvents : vesselEvents;
+  const telemetryEvents = vesselEvents;
 
   const processorSteps = buildProcessorSteps(
     shipment,
@@ -224,9 +242,9 @@ export function ShipmentDetail() {
               <span className="font-mono text-cyan-200">{shipment.shipment_id}</span> for {shipment.supplier}
             </p>
             <div className="mt-4 flex min-w-0 flex-wrap items-center gap-2 text-sm">
-              <RouteChip label="Origin" value={shipment.origin} />
+              <RouteChip label="Origin" value={vesselOrigin || shipment.origin} />
               <span className="text-slate-600">to</span>
-              <RouteChip label="Destination" value={shipment.destination} />
+              <RouteChip label="Destination" value={vesselDestination || shipment.destination} />
               <RouteChip label="Material" value={shipment.material} />
               <RouteChip label="Inventory" value={`${shipment.inventory_days_cover} days`} />
             </div>
@@ -269,14 +287,12 @@ export function ShipmentDetail() {
       </section>
 
       {/* Live weather + marine conditions at vessel position */}
-      {!isGround && (
-        <LiveWeatherBanner
-          latitude={shipment.vessel_latitude}
-          longitude={shipment.vessel_longitude}
-          vesselName={shipment.vessel_name ?? undefined}
-          transportMode={shipment.transport_mode}
-        />
-      )}
+      <LiveWeatherBanner
+        latitude={vesselLat}
+        longitude={vesselLon}
+        vesselName={vesselName ?? undefined}
+        transportMode={shipment.transport_mode}
+      />
 
       {analysis ? (
         <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
@@ -290,7 +306,6 @@ export function ShipmentDetail() {
             </div>
           </div>
 
-          {!isGround && (
           <section className="card min-w-0 space-y-4 overflow-hidden">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -299,27 +314,37 @@ export function ShipmentDetail() {
                   <h2 className="text-lg font-semibold text-white">Live Route View</h2>
                 </div>
                 <p className="mt-1 text-sm text-slate-400">
-                  {shipment.origin} to {shipment.destination}
+                  {vesselOrigin} to {vesselDestination}
                 </p>
+                {shipment.imo_number && (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    IMO: {shipment.imo_number} • {vesselName || shipment.vessel_name || 'Unknown Vessel'}
+                    {liveVesselQuery.data && (
+                      <span className="ml-2 inline-flex items-center gap-1 text-green-400">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                        Live
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
               <span className="w-fit rounded-full border border-slate-700 bg-slate-950/60 px-3 py-1 text-xs font-medium uppercase text-slate-300">
-                {shipment.transport_mode}
+                SEA
               </span>
             </div>
 
             <VesselMap
-              vesselName={isAir ? (shipment.flight_callsign || shipment.vessel_name || undefined) : (shipment.vessel_name || undefined)}
-              origin={shipment.origin}
-              destination={shipment.destination}
-              latitude={shipment.vessel_latitude}
-              longitude={shipment.vessel_longitude}
-              status={telemetryEvents[0]?.metadata?.status || telemetryEvents[0]?.metadata?.vessel_status || undefined}
-              speed={telemetryEvents[0]?.metadata?.speed_knots}
+              vesselName={vesselName || undefined}
+              origin={vesselOrigin}
+              destination={vesselDestination}
+              latitude={vesselLat}
+              longitude={vesselLon}
+              status={vesselStatus || telemetryEvents[0]?.metadata?.status || telemetryEvents[0]?.metadata?.vessel_status || undefined}
+              speed={vesselSpeed ?? telemetryEvents[0]?.metadata?.speed_knots}
               progress={telemetryEvents[0]?.metadata?.progress_percent}
-              transportMode={shipment.transport_mode}
+              transportMode="sea"
             />
           </section>
-          )}
         </div>
       ) : analysisQuery.isLoading ? (
         <PageLoading label="Running shipment analysis" compact />

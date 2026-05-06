@@ -1,15 +1,11 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { riskApi, shipmentApi } from '../services/api';
-import { ShipmentTracker } from '../components/ShipmentTracker';
+import { shipmentApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
-import { useRiskStore } from '../store/riskStore';
-import { RiskCard } from '../components/RiskCard';
 import { ShipmentInput, StrandsShipmentRiskResponse } from '../types';
 import {
   AlertTriangle,
-  TrendingUp,
   Activity,
   Clock,
   RefreshCw,
@@ -24,23 +20,21 @@ import {
 import { useViewMode } from '../context/ViewModeContext';
 import { CFODashboard } from './CFODashboard';
 import { OperationsDashboard } from './OperationsDashboard';
+import { useShipmentStore } from '../store/shipmentStore';
 
 export function Dashboard() {
   const { viewMode } = useViewMode();
 
-  // Delegate to role-specific views
-  if (viewMode === 'cfo')        return <CFODashboard />;
-  if (viewMode === 'operations') return <OperationsDashboard />;
-
-  // Analyst view (default) ↓
+  // All hooks must be called before conditional returns (React rules of hooks)
   const [selectedShipmentId, setSelectedShipmentId] = useState('');
   const [riskResult, setRiskResult] = useState<StrandsShipmentRiskResponse | null>(null);
-  const [uploadedShipments, setUploadedShipments] = useState<ShipmentInput[] | null>(null);
+  const { uploadedShipments, setUploadedShipments } = useShipmentStore();
   const navigate = useNavigate();
 
   const { data: risks, isLoading, error, refetch } = useQuery({
-    queryKey: ['risks'],
-    queryFn: () => riskApi.getRisks().then((res) => res.data),
+    queryKey: ['risk-summary'],
+    queryFn: () => shipmentApi.getRiskSummary().then((res) => res.data),
+    refetchInterval: 30_000,
   });
 
   const { data: demoShipments = [], isLoading: shipmentsLoading } = useQuery({
@@ -56,6 +50,8 @@ export function Dashboard() {
       setUploadedShipments(data.shipments);
       setSelectedShipmentId('');
       setRiskResult(null);
+      // Trigger background analysis for uploaded shipments so metrics update
+      shipmentApi.preloadAnalyses(data.shipments).then(() => refetch());
     },
   });
 
@@ -73,52 +69,38 @@ export function Dashboard() {
     onSuccess: (data) => setRiskResult(data),
   });
 
-  const setRisks = useRiskStore((state) => state.setRisks);
-
-  if (risks) {
-    setRisks(risks);
-  }
-
-  const filteredRisks = useMemo(
-    () => (risks ?? []).filter((r: any) => r.source !== 'predictive_analysis'),
-    [risks]
-  );
-
-  const criticalRisks = filteredRisks.filter((r: any) => r.severity === 'critical');
-  const highRisks = filteredRisks.filter((r: any) => r.severity === 'high');
-  const avgConfidence =
-    filteredRisks.length > 0
-      ? Math.round((filteredRisks.reduce((sum: number, r: any) => sum + r.confidence, 0) / filteredRisks.length) * 100)
-      : 0;
+  // Delegate to role-specific views (after all hooks)
+  if (viewMode === 'cfo')        return <CFODashboard />;
+  if (viewMode === 'operations') return <OperationsDashboard />;
 
   const metrics = [
     {
-      label: 'Total Risks',
-      value: filteredRisks.length,
-      icon: Activity,
+      label: 'Shipments Analyzed',
+      value: risks?.total_analyzed ?? 0,
+      icon: Ship,
       color: 'text-primary-400',
       bgColor: 'bg-primary-500/10',
     },
     {
-      label: 'Critical',
-      value: criticalRisks.length,
+      label: 'Critical Risk',
+      value: risks?.critical ?? 0,
       icon: AlertTriangle,
       color: 'text-danger-400',
       bgColor: 'bg-danger-500/10',
     },
     {
-      label: 'High Priority',
-      value: highRisks.length,
-      icon: TrendingUp,
+      label: 'High Risk',
+      value: risks?.high ?? 0,
+      icon: Activity,
       color: 'text-orange-400',
       bgColor: 'bg-orange-500/10',
     },
     {
-      label: 'Avg Confidence',
-      value: `${avgConfidence}%`,
-      icon: Clock,
-      color: 'text-green-400',
-      bgColor: 'bg-green-500/10',
+      label: 'Avg Risk Score',
+      value: risks?.avg_risk_score?.toFixed(2) ?? '0.00',
+      icon: Radio,
+      color: 'text-yellow-400',
+      bgColor: 'bg-yellow-500/10',
     },
   ];
 
@@ -182,8 +164,7 @@ export function Dashboard() {
         })}
       </div>
 
-      {/* Phase 3: Shipment Tracker Widget */}
-      <ShipmentTracker />
+      {/* Phase 3: Shipment Tracker Widget removed */}
 
       <section className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)] gap-6">
         <div className="card">
@@ -301,21 +282,6 @@ export function Dashboard() {
         </div>
       </section>
 
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-4">Recent Risk Assessments</h2>
-        {filteredRisks.length > 0 ? (
-          <div className="grid grid-cols-2 gap-4">
-            {filteredRisks.slice(0, 10).map((risk: any) => (
-              <RiskCard key={risk.risk_id} risk={risk} />
-            ))}
-          </div>
-        ) : (
-          <div className="card text-center py-12">
-            <Activity className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-400">No risks detected yet. Ingest data to begin analysis.</p>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
