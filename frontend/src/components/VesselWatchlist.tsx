@@ -8,7 +8,7 @@
  */
 
 import { useState, useMemo } from 'react';
-import { Ship, Search, Filter, Eye, EyeOff } from 'lucide-react';
+import { Ship, Search, Eye, EyeOff } from 'lucide-react';
 import { useVesselStore } from '../store/vesselStore';
 import type { VesselStatus } from '../types/vessel';
 
@@ -18,14 +18,6 @@ const STATUS_ICONS: Record<string, string> = {
   silent: '🔴',
   danger: '🔴',
   unknown: '⚪',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Active',
-  stale: 'Stale',
-  silent: 'AIS Silent',
-  danger: 'Danger Zone',
-  unknown: 'Unknown',
 };
 
 interface VesselWatchlistProps {

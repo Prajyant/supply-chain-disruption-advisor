@@ -167,7 +167,7 @@ export function VesselMap({
   status,
   speed,
   progress,
-  transportMode = 'sea',
+  transportMode: _transportMode = 'sea',
 }: VesselMapProps) {
   // Get coordinates from port names
   const originCoords = getPortCoordinates(origin);

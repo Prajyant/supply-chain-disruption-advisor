@@ -1,0 +1,24 @@
+======================================================================
+SUPPLY CHAIN DISRUPTION ADVISOR — SCENARIO VALIDATION REPORT
+Generated: 2026-05-06T21:42:55.879800
+API Base: http://localhost:8000
+======================================================================
+
+This report validates that the system's risk scoring matches
+real-world danger levels for known scenarios.
+
+RULE: A LOW score on a known danger zone is always a FAILURE.
+
+----------------------------------------------------------------------
+Test files validated:
+  - test_route_distances.csv      (Searoute distance calculations)
+  - test_port_congestion.csv      (UNCTAD port turnaround data)
+  - test_sanctions_screening.csv  (OFAC + UN sanctions lists)
+  - test_weather_validation.csv   (Open-Meteo weather/marine API)
+  - test_vessel_registry.csv      (Equasis inspection data)
+  - test_tariff_rates.csv         (WTO/WITS tariff rates)
+  - test_shipments.csv            (Master shipment scenarios)
+  - test_risk_scoring_integration.csv (End-to-end composite scoring)
+----------------------------------------------------------------------
+
+Run: pytest tests/test_scenario_validation.py -v

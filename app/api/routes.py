@@ -1331,6 +1331,204 @@ def send_test_email() -> dict:
     return {"message_id": result.message_id, "status": "sent", "recipients": recipients}
 
 
+# ==================== MARITIME INTELLIGENCE ENDPOINTS ====================
+
+
+@router.get("/maritime/vessel-registry/{imo_number}")
+async def get_vessel_registry(imo_number: str) -> dict:
+    """Get vessel inspection and detention data from Equasis registry.
+
+    Returns cached data if available, otherwise queries Equasis (rate limited).
+    Falls back to demo data if Equasis is unavailable or query fails.
+    """
+    from app.ingestion.vessel_registry import EquasisClient, assess_vessel_risk
+
+    client = EquasisClient()
+    if not client.is_configured:
+        # Return demo data if Equasis not configured
+        demo_data = _vessel_registry_demo(imo_number)
+        risk = assess_vessel_risk(demo_data)
+        return {"registry": demo_data, "risk_assessment": risk}
+
+    registry_data = await asyncio.to_thread(client.get_vessel_info, imo_number)
+    if not registry_data:
+        # Equasis query failed (rate limit, login issue, etc.) — use demo fallback
+        demo_data = _vessel_registry_demo(imo_number)
+        risk = assess_vessel_risk(demo_data)
+        return {"registry": demo_data, "risk_assessment": risk}
+
+    risk = assess_vessel_risk(registry_data)
+    return {"registry": registry_data, "risk_assessment": risk}
+
+
+def _vessel_registry_demo(imo_number: str) -> dict:
+    """Generate demo vessel registry data based on IMO number."""
+    return {
+        "imo_number": imo_number,
+        "detentions_last_36_months": 1,
+        "inspections_last_36_months": 4,
+        "deficiencies_last_36_months": 7,
+        "classification_society": "Lloyd's Register",
+        "flag_state": "Panama",
+        "build_year": 2015,
+        "data_source": "demo",
+    }
+
+
+@router.get("/maritime/route-distance")
+async def get_route_distance(
+    origin: str = Query(..., description="Origin port name"),
+    destination: str = Query(..., description="Destination port name"),
+    speed_knots: float = Query(14.0, description="Vessel speed in knots"),
+) -> dict:
+    """Calculate sea route distance and ETA between two ports.
+
+    Uses the Searoute library for realistic maritime routing.
+    Falls back to great circle calculation if Searoute unavailable.
+    """
+    from app.ingestion.route_calculator import calculate_sea_route
+
+    result = calculate_sea_route(origin, destination, speed_knots)
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Could not resolve ports: {origin} → {destination}",
+        )
+    return result.to_dict()
+
+
+@router.get("/maritime/route-deviation")
+async def check_route_deviation(
+    vessel_lat: float = Query(...),
+    vessel_lon: float = Query(...),
+    origin: str = Query(...),
+    destination: str = Query(...),
+    threshold_nm: float = Query(50.0),
+) -> dict:
+    """Check if a vessel has deviated from its expected route.
+
+    Returns deviation distance and severity assessment.
+    """
+    from app.ingestion.route_calculator import detect_route_deviation
+
+    return detect_route_deviation(vessel_lat, vessel_lon, origin, destination, threshold_nm)
+
+
+@router.get("/maritime/sanctions/vessel/{imo_number}")
+async def screen_vessel_sanctions(imo_number: str, vessel_name: str = "") -> dict:
+    """Screen a vessel against OFAC and UN sanctions lists.
+
+    Downloads and caches sanctions data locally (refreshes every 24h).
+    """
+    from app.ingestion.sanctions_monitor import SanctionsMonitor
+
+    monitor = SanctionsMonitor()
+    return await asyncio.to_thread(monitor.screen_vessel, imo_number, vessel_name)
+
+
+@router.get("/maritime/sanctions/entity/{name}")
+async def screen_entity_sanctions(name: str) -> dict:
+    """Screen a company or person name against sanctions lists."""
+    from app.ingestion.sanctions_monitor import SanctionsMonitor
+
+    monitor = SanctionsMonitor()
+    return await asyncio.to_thread(monitor.screen_entity, name)
+
+
+@router.get("/maritime/sanctions/route")
+async def screen_route_sanctions(countries: str = Query(..., description="Comma-separated country names")) -> dict:
+    """Screen a trade route's countries for active sanctions programs."""
+    from app.ingestion.sanctions_monitor import SanctionsMonitor
+
+    country_list = [c.strip() for c in countries.split(",") if c.strip()]
+    monitor = SanctionsMonitor()
+    return await asyncio.to_thread(monitor.screen_country_route, country_list)
+
+
+@router.get("/maritime/tariffs")
+async def get_route_tariffs(
+    origin_country: str = Query(..., description="Exporting country ISO3 code (e.g., CHN)"),
+    destination_country: str = Query(..., description="Importing country ISO3 code (e.g., USA)"),
+    product_category: str = Query("electronics", description="Product category"),
+) -> dict:
+    """Get tariff rates for a trade route and product category.
+
+    Uses WTO/WITS data. Falls back to cached or synthetic data if APIs unavailable.
+    """
+    from app.ingestion.tariff_monitor import TariffMonitor
+
+    monitor = TariffMonitor()
+    return await asyncio.to_thread(
+        monitor.check_route_tariffs, origin_country, destination_country, product_category
+    )
+
+
+@router.get("/maritime/port-congestion/{port_name}")
+async def get_port_congestion(port_name: str) -> dict:
+    """Get congestion status for a specific port.
+
+    Uses UNCTAD data with baseline comparisons.
+    """
+    from app.ingestion.port_congestion import PortCongestionMonitor
+
+    monitor = PortCongestionMonitor()
+    status = monitor.get_port_status(port_name)
+    if not status:
+        raise HTTPException(status_code=404, detail=f"Port not found: {port_name}")
+    return status
+
+
+@router.get("/maritime/port-congestion")
+async def get_all_port_congestion() -> dict:
+    """Get congestion status for all monitored ports.
+
+    Returns only ports with elevated congestion levels.
+    """
+    from app.ingestion.port_congestion import PortCongestionMonitor
+
+    monitor = PortCongestionMonitor()
+    congested = monitor.scan_all_ports()
+    return {"congested_ports": congested, "total_monitored": 24}
+
+
+@router.get("/maritime/supply-hub/search")
+async def search_supply_hub(
+    query: str = Query("", description="Search query"),
+    country: str = Query("", description="ISO2 country code"),
+    limit: int = Query(20, description="Max results"),
+) -> dict:
+    """Search Open Supply Hub for facilities.
+
+    Requires OPEN_SUPPLY_HUB_API_TOKEN in .env (free registration).
+    """
+    from app.ingestion.supply_hub import OpenSupplyHubClient
+
+    client = OpenSupplyHubClient()
+    if not client.is_configured:
+        return {
+            "facilities": [],
+            "message": "Open Supply Hub not configured. Set OPEN_SUPPLY_HUB_API_TOKEN in .env (free at opensupplyhub.org).",
+        }
+
+    facilities = await asyncio.to_thread(client.search_facilities, query, country, "", limit)
+    return {"facilities": facilities, "count": len(facilities)}
+
+
+@router.get("/maritime/identity/resolve-mmsi/{mmsi}")
+async def resolve_mmsi(mmsi: str) -> dict:
+    """Resolve MMSI to IMO number using ITU MARS.
+
+    Web scraping with caching — use sparingly.
+    """
+    from app.ingestion.vessel_registry import ITUMARSClient
+
+    client = ITUMARSClient()
+    result = await asyncio.to_thread(client.resolve_mmsi_to_imo, mmsi)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"No identity found for MMSI {mmsi}")
+    return result
+
+
 # ==================== HEALTH ENDPOINT ====================
 
 

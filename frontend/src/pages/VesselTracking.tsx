@@ -59,7 +59,7 @@ function FlyToVessel({ vessel }: { vessel: VesselStatus | null }) {
 export function VesselTracking() {
   const {
     vessels, setVessels, fleetSummary, setFleetSummary,
-    dangerZones, setDangerZones, selectedVessel, selectVessel,
+    dangerZones: _dangerZones, setDangerZones, selectedVessel, selectVessel,
     timeRange, setTimeRange, isLoading, setLoading, setError,
   } = useVesselStore();
 

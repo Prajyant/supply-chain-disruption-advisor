@@ -44,6 +44,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/maritime': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
       '/node/': {
         target: 'http://localhost:8000',
         changeOrigin: true,
@@ -62,6 +66,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/feedback': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/email': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

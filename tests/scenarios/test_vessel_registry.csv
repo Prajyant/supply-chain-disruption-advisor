@@ -1,0 +1,6 @@
+test_id,vessel_imo,vessel_name,flag_state,build_year,vessel_age_years,gross_tonnage,expected_detention_count_min,expected_detention_count_max,expected_deficiency_count_min,expected_deficiency_count_max,expected_registry_risk_score_min,expected_registry_risk_score_max,expected_risk_level,risk_justification,test_scenario_tag
+VR-001,9795478,MAERSK EDINBURGH,Panama,2015,11,114000,0,2,0,10,0.0,0.5,medium,Demo fallback data - 1 detention and 7 deficiencies produces medium risk,REGISTRY_DEMO_STANDARD
+VR-002,9321483,MAERSK VESSEL,Panama,2015,11,45000,0,2,0,10,0.0,0.5,medium,Demo fallback - all unknown IMOs return same baseline demo data,REGISTRY_DEMO_BASELINE
+VR-003,9811000,EVER GIVEN,Panama,2015,11,220000,0,2,0,10,0.0,0.5,medium,Known vessel but Equasis rate-limited - falls back to demo data,REGISTRY_KNOWN_VESSEL
+VR-004,9999999,UNKNOWN VESSEL,Panama,2015,11,0,0,2,0,10,0.0,0.5,medium,Non-existent vessel - demo fallback returns medium risk baseline,REGISTRY_NOT_FOUND
+VR-005,9703291,MSC OSCAR,Panama,2015,11,197000,0,2,0,10,0.0,0.5,medium,Major carrier vessel - demo fallback when Equasis unavailable,REGISTRY_MAJOR_CARRIER

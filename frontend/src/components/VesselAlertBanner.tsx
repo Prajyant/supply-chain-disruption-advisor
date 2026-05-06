@@ -5,7 +5,7 @@
  * with severity-based styling and dismiss functionality.
  */
 
-import { AlertTriangle, Radio, Gauge, MapPin, X } from 'lucide-react';
+import { AlertTriangle, Radio, Gauge, MapPin } from 'lucide-react';
 import { useVesselStore } from '../store/vesselStore';
 import type { VesselAnomaly } from '../types/vessel';
 

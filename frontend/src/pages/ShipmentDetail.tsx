@@ -22,8 +22,12 @@ import {
   TrendingDown,
   Factory,
   Calendar,
+  Anchor,
+  Navigation,
+  MapPin,
+  Shield,
 } from 'lucide-react';
-import { agentApi, shipmentApi } from '../services/api';
+import { agentApi, shipmentApi, maritimeApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
 import { getPreloadedAnalysis } from '../services/shipmentPreloader';
 import { ResolutionPackageComponent } from '../components/ResolutionPackage';
@@ -123,6 +127,49 @@ export function ShipmentDetail() {
     enabled: Boolean(shipment?.imo_number),
     refetchInterval: 60_000, // Refresh every 60 seconds
     staleTime: 30_000,
+  });
+
+  // ── Maritime Intelligence (per-shipment) ──────────────────────────────
+  // Extract just the city/port name (strip country codes like "Yantian, CN")
+  const originPort = shipment?.origin?.split(',')[0]?.trim() || '';
+  const destPort = shipment?.destination?.split(',')[0]?.trim() || '';
+
+  const routeQuery = useQuery({
+    queryKey: ['route-distance', originPort, destPort],
+    queryFn: () => maritimeApi.getRouteDistance(originPort, destPort).then(r => r.data).catch(() => null),
+    enabled: Boolean(originPort && destPort),
+    staleTime: Infinity,
+    retry: 0,
+  });
+
+  const originPortQuery = useQuery({
+    queryKey: ['port-congestion-origin', originPort],
+    queryFn: () => maritimeApi.getPortCongestion(originPort).then(r => r.data).catch(() => null),
+    enabled: Boolean(originPort),
+    staleTime: 120_000,
+    retry: 0,
+  });
+
+  const destPortQuery = useQuery({
+    queryKey: ['port-congestion-dest', destPort],
+    queryFn: () => maritimeApi.getPortCongestion(destPort).then(r => r.data).catch(() => null),
+    enabled: Boolean(destPort),
+    staleTime: 120_000,
+    retry: 0,
+  });
+
+  const sanctionsQuery = useQuery({
+    queryKey: ['sanctions-vessel', shipment?.imo_number],
+    queryFn: () => maritimeApi.screenVesselSanctions(shipment!.imo_number!, shipment?.vessel_name || '').then(r => r.data),
+    enabled: Boolean(shipment?.imo_number),
+    staleTime: 300_000,
+  });
+
+  const registryQuery = useQuery({
+    queryKey: ['vessel-registry', shipment?.imo_number],
+    queryFn: () => maritimeApi.getVesselRegistry(shipment!.imo_number!).then(r => r.data),
+    enabled: Boolean(shipment?.imo_number),
+    staleTime: 300_000,
   });
 
   // Use live data if available, fall back to CSV data
@@ -292,6 +339,17 @@ export function ShipmentDetail() {
         longitude={vesselLon}
         vesselName={vesselName ?? undefined}
         transportMode={shipment.transport_mode}
+      />
+
+      {/* Maritime Intelligence — per-shipment calculations */}
+      <ShipmentMaritimeIntel
+        routeData={routeQuery.data}
+        originPortData={originPortQuery.data}
+        destPortData={destPortQuery.data}
+        sanctions={sanctionsQuery.data}
+        registry={registryQuery.data}
+        shipment={shipment}
+        isLoading={routeQuery.isLoading || sanctionsQuery.isLoading}
       />
 
       {analysis ? (
@@ -1369,5 +1427,261 @@ function CompactEvidenceCard({ event }: { event: EvidenceEvent }) {
       <h4 className="text-sm font-medium text-white mb-1">{event.title}</h4>
       <p className="text-xs text-slate-400 line-clamp-2">{summary || event.title}</p>
     </div>
+  );
+}
+
+// ── Per-Shipment Maritime Intelligence Panel ──────────────────────────────
+
+function ShipmentMaritimeIntel({
+  routeData,
+  originPortData,
+  destPortData,
+  sanctions,
+  registry,
+  shipment,
+  isLoading,
+}: {
+  routeData: any;
+  originPortData: any;
+  destPortData: any;
+  sanctions: any;
+  registry: any;
+  shipment: ShipmentInput;
+  isLoading: boolean;
+}) {
+  const isSanctioned = sanctions?.is_sanctioned === true;
+  const registryRisk = registry?.risk_assessment;
+  const hasPortCongestion = (originPortData?.severity && originPortData.severity !== 'low') ||
+    (destPortData?.severity && destPortData.severity !== 'low');
+
+  return (
+    <section className="rounded-xl border border-slate-800 bg-slate-900/80 p-5 shadow-xl shadow-slate-950/30">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Anchor className="w-5 h-5 text-blue-400" />
+          <h2 className="text-lg font-semibold text-white">Maritime Intelligence</h2>
+        </div>
+        <span className="text-xs text-slate-500">Calculated for this shipment · OFAC · UNCTAD · Equasis · Searoute</span>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center gap-3 text-slate-400 text-sm py-4">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Calculating maritime intelligence for {shipment.origin} → {shipment.destination}...
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Route Distance & ETA */}
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Navigation className="w-4 h-4 text-blue-400" />
+              <h3 className="text-sm font-semibold text-white">Route Calculation</h3>
+              <span className="text-xs text-slate-500 ml-auto">Searoute</span>
+            </div>
+            {routeData && routeData.distance_nm ? (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <MiniStat label="Distance" value={`${Math.round(routeData.distance_nm).toLocaleString()} nm`} />
+                <MiniStat label="Distance (km)" value={`${Math.round(routeData.distance_km).toLocaleString()} km`} />
+                <MiniStat label="ETA @ 14kn" value={`${routeData.estimated_days} days`} />
+                <MiniStat label="Route" value={`${shipment.origin} → ${shipment.destination}`} />
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <MiniStat label="Route" value={`${shipment.origin} → ${shipment.destination}`} />
+                <MiniStat label="Status" value="Calculating..." />
+                <MiniStat label="Distance" value="—" />
+                <MiniStat label="ETA" value="—" />
+              </div>
+            )}
+          </div>
+
+          {/* Port Congestion */}
+          <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <MapPin className="w-4 h-4 text-orange-400" />
+              <h3 className="text-sm font-semibold text-white">Port Congestion</h3>
+              <span className="text-xs text-slate-500 ml-auto">UNCTAD</span>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {originPortData ? (
+                <PortCard label={`Origin — ${shipment.origin}`} port={originPortData} />
+              ) : (
+                <PortCardEmpty label={`Origin — ${shipment.origin}`} />
+              )}
+              {destPortData ? (
+                <PortCard label={`Destination — ${shipment.destination}`} port={destPortData} />
+              ) : (
+                <PortCardEmpty label={`Destination — ${shipment.destination}`} />
+              )}
+            </div>
+          </div>
+
+          {/* Sanctions Screening */}
+          {sanctions && (
+            <div className={`rounded-lg border p-4 ${isSanctioned ? 'border-red-500/40 bg-red-500/5' : 'border-slate-800 bg-slate-950/50'}`}>
+              <div className="flex items-center gap-2 mb-3">
+                <Shield className={`w-4 h-4 ${isSanctioned ? 'text-red-400' : 'text-emerald-400'}`} />
+                <h3 className="text-sm font-semibold text-white">Sanctions Screening</h3>
+                <span className="text-xs text-slate-500 ml-auto">OFAC + UN</span>
+              </div>
+              {isSanctioned ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-red-400 font-semibold">
+                    <AlertTriangle className="w-4 h-4" />
+                    SANCTIONS MATCH — Immediate compliance review required
+                  </div>
+                  {sanctions.matches?.slice(0, 3).map((match: any, i: number) => (
+                    <div key={i} className="text-xs text-red-300 bg-red-500/10 rounded px-3 py-2">
+                      {match.name} ({match.source}/{match.program})
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-green-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Vessel IMO {shipment.imo_number} — No sanctions matches found
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Vessel Registry / Inspection History */}
+          {registryRisk && (
+            <div className={`rounded-lg border p-4 ${
+              registryRisk.severity === 'critical' ? 'border-red-500/40 bg-red-500/5' :
+              registryRisk.severity === 'high' ? 'border-orange-500/40 bg-orange-500/5' :
+              registryRisk.severity === 'medium' ? 'border-yellow-500/40 bg-yellow-500/5' :
+              'border-slate-800 bg-slate-950/50'
+            }`}>
+              <div className="flex items-center gap-2 mb-3">
+                <Ship className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-sm font-semibold text-white">Vessel Registry</h3>
+                <span className="text-xs text-slate-500 ml-auto">Equasis</span>
+              </div>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+                <MiniStat label="Risk Score" value={`${(registryRisk.risk_score * 100).toFixed(0)}%`} />
+                <MiniStat label="Detentions (36mo)" value={String(registry.registry?.detentions_last_36_months ?? 0)} />
+                <MiniStat label="Deficiencies" value={String(registry.registry?.deficiencies_last_36_months ?? 0)} />
+                <MiniStat label="Build Year" value={String(registry.registry?.build_year ?? 'N/A')} />
+              </div>
+              {registryRisk.risk_factors?.length > 0 && (
+                <div className="space-y-1">
+                  {registryRisk.risk_factors.map((factor: string, i: number) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <AlertCircle className="w-3 h-3 text-orange-400 shrink-0" />
+                      <span className="text-slate-300">{factor}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {registryRisk.risk_factors?.length === 0 && (
+                <div className="flex items-center gap-2 text-sm text-green-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  No significant vessel risk factors identified
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Summary badges */}
+          {!isLoading && (
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-800">
+              {routeData && routeData.distance_nm && (
+                <IntelBadge color="blue" label={`${Math.round(routeData.distance_nm).toLocaleString()} nm`} />
+              )}
+              {hasPortCongestion && (
+                <IntelBadge color="orange" label="Port congestion detected" />
+              )}
+              {!isSanctioned && sanctions && (
+                <IntelBadge color="green" label="Sanctions clear" />
+              )}
+              {isSanctioned && (
+                <IntelBadge color="red" label="SANCTIONS MATCH" />
+              )}
+              {registryRisk && registryRisk.severity === 'low' && (
+                <IntelBadge color="green" label="Vessel registry OK" />
+              )}
+              {registryRisk && registryRisk.severity !== 'low' && (
+                <IntelBadge color="orange" label={`Vessel risk: ${registryRisk.severity}`} />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-800/60 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">{label}</div>
+      <div className="text-sm font-medium text-slate-100 truncate">{value}</div>
+    </div>
+  );
+}
+
+function PortCard({ label, port }: { label: string; port: any }) {
+  if (!port || !port.port_name) return <PortCardEmpty label={label} />;
+  
+  const severityColors: Record<string, string> = {
+    critical: 'border-red-500/30 bg-red-500/5',
+    high: 'border-orange-500/30 bg-orange-500/5',
+    medium: 'border-yellow-500/30 bg-yellow-500/5',
+    low: 'border-green-500/30 bg-green-500/5',
+  };
+  const color = severityColors[port.severity] || severityColors.low;
+
+  return (
+    <div className={`rounded-lg border p-3 ${color}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
+        <span className={`text-xs font-bold uppercase px-2 py-0.5 rounded ${
+          port.severity === 'critical' ? 'bg-red-500/20 text-red-300' :
+          port.severity === 'high' ? 'bg-orange-500/20 text-orange-300' :
+          port.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-300' :
+          'bg-green-500/20 text-green-300'
+        }`}>
+          {port.severity || 'normal'}
+        </span>
+      </div>
+      <div className="text-sm font-semibold text-white capitalize mb-1">{port.port_name}</div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <span className="text-slate-500">Turnaround:</span>
+          <span className="ml-1 text-slate-200">{port.current_turnaround_days ?? '—'}d</span>
+        </div>
+        <div>
+          <span className="text-slate-500">Ratio:</span>
+          <span className="ml-1 text-slate-200">{port.congestion_ratio ?? '—'}x</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PortCardEmpty({ label }: { label: string }) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="text-xs text-slate-500 px-2 py-0.5 rounded bg-slate-800">N/A</span>
+      </div>
+      <p className="text-xs text-slate-500">Port not in monitoring database</p>
+    </div>
+  );
+}
+
+function IntelBadge({ color, label }: { color: 'blue' | 'green' | 'orange' | 'red'; label: string }) {
+  const colors = {
+    blue: 'border-blue-500/30 bg-blue-500/10 text-blue-300',
+    green: 'border-green-500/30 bg-green-500/10 text-green-300',
+    orange: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
+    red: 'border-red-500/30 bg-red-500/10 text-red-300',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${colors[color]}`}>
+      {label}
+    </span>
   );
 }

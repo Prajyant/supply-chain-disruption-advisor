@@ -1,7 +1,10 @@
 """Pydantic schemas for API requests and responses."""
 from datetime import datetime
 from typing import Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+VALID_RISK_LEVELS = {"low", "medium", "high", "critical"}
 
 
 # ==================== INGESTION SCHEMAS ====================
@@ -52,6 +55,19 @@ class RiskAssessment(BaseModel):
     summary: str
     headline: str = ""  # News headline for display
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("severity")
+    @classmethod
+    def validate_severity(cls, v: str) -> str:
+        v = v.lower()
+        if v not in VALID_RISK_LEVELS:
+            return "low"
+        return v
+
+    @field_validator("confidence")
+    @classmethod
+    def clamp_confidence(cls, v: float) -> float:
+        return max(0.0, min(1.0, v))
 
 
 # ==================== CHAT SCHEMAS ====================
@@ -266,6 +282,24 @@ class ShipmentRiskAdviceResponse(BaseModel):
     net_saving_if_act_now_usd: float = 0.0
     production_lines_at_risk: list[str] = Field(default_factory=list)
     halt_date_estimate: Optional[str] = None
+
+    @field_validator("risk_score")
+    @classmethod
+    def clamp_risk_score(cls, v: float) -> float:
+        return max(0.0, min(10.0, v))
+
+    @field_validator("confidence_score")
+    @classmethod
+    def clamp_confidence(cls, v: int) -> int:
+        return max(0, min(100, v))
+
+    @field_validator("risk_level")
+    @classmethod
+    def validate_risk_level(cls, v: str) -> str:
+        v = v.lower()
+        if v not in VALID_RISK_LEVELS:
+            return "medium"
+        return v
 
 
 class StrandsShipmentRiskRequest(BaseModel):

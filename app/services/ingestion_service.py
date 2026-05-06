@@ -5,6 +5,10 @@ from typing import Optional
 from app.ingestion.loaders import load_supplier_emails, load_news_feed, load_inventory
 from app.ingestion.worldmonitor import fetch_realtime_news
 from app.ingestion.email_reader import fetch_live_emails
+from app.ingestion.tariff_monitor import fetch_tariff_events
+from app.ingestion.port_congestion import fetch_port_congestion_events
+from app.ingestion.sanctions_monitor import SanctionsMonitor, normalize_sanctions_event
+from app.ingestion.supply_hub import fetch_supply_hub_events
 from app.retrieval.index import RetrievalIndex
 from app.core.config import get_settings
 
@@ -31,6 +35,10 @@ class IngestionService:
         inventory_path: str,
         use_realtime_news: bool = False,
         use_live_emails: bool = False,
+        use_tariff_data: bool = True,
+        use_port_congestion: bool = True,
+        use_sanctions_screening: bool = True,
+        use_supply_hub: bool = False,
     ) -> dict[str, int | str]:
         """Ingest data from multiple sources and build search index.
 
@@ -39,6 +47,10 @@ class IngestionService:
             news_feed_path: Path to news feed CSV
             inventory_path: Path to inventory CSV
             use_realtime_news: Whether to fetch real-time news
+            use_tariff_data: Whether to fetch tariff intelligence
+            use_port_congestion: Whether to fetch port congestion data
+            use_sanctions_screening: Whether to run sanctions screening
+            use_supply_hub: Whether to fetch Open Supply Hub data
 
         Returns:
             Dictionary with ingestion statistics
@@ -98,6 +110,42 @@ class IngestionService:
             logger.info(f"Loaded {len(inventory_events)} inventory events")
         except FileNotFoundError:
             logger.warning(f"Inventory file not found: {inventory_path}")
+
+        # --- Tariff intelligence ---
+        if use_tariff_data:
+            try:
+                tariff_events = fetch_tariff_events(limit=10)
+                events.extend(tariff_events)
+                logger.info(f"Loaded {len(tariff_events)} tariff intelligence events")
+            except Exception as e:
+                logger.warning(f"Tariff data fetch failed: {e}")
+
+        # --- Port congestion monitoring ---
+        if use_port_congestion:
+            try:
+                congestion_events = fetch_port_congestion_events(limit=10)
+                events.extend(congestion_events)
+                logger.info(f"Loaded {len(congestion_events)} port congestion events")
+            except Exception as e:
+                logger.warning(f"Port congestion fetch failed: {e}")
+
+        # --- Sanctions screening ---
+        if use_sanctions_screening:
+            try:
+                sanctions_monitor = SanctionsMonitor()
+                sanctions_monitor.refresh_if_needed()
+                logger.info("Sanctions database refreshed")
+            except Exception as e:
+                logger.warning(f"Sanctions refresh failed: {e}")
+
+        # --- Open Supply Hub (industry graph) ---
+        if use_supply_hub:
+            try:
+                hub_events = fetch_supply_hub_events(limit=10)
+                events.extend(hub_events)
+                logger.info(f"Loaded {len(hub_events)} supply hub events")
+            except Exception as e:
+                logger.warning(f"Supply hub fetch failed: {e}")
 
         # Build vector index
         self.vector_index = RetrievalIndex()

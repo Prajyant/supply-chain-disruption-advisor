@@ -169,4 +169,24 @@ export const feedbackApi = {
   getHistory: (limit = 50) => api.get(`/feedback/history?limit=${limit}`),
 };
 
+// ==================== Maritime Intelligence API ====================
+
+export const maritimeApi = {
+  getVesselRegistry: (imo: string) => api.get(`/maritime/vessel-registry/${imo}`),
+  getRouteDistance: (origin: string, destination: string, speedKnots = 14) =>
+    api.get('/maritime/route-distance', { params: { origin, destination, speed_knots: speedKnots } }),
+  getRouteDeviation: (vesselLat: number, vesselLon: number, origin: string, destination: string) =>
+    api.get('/maritime/route-deviation', { params: { vessel_lat: vesselLat, vessel_lon: vesselLon, origin, destination } }),
+  screenVesselSanctions: (imo: string, vesselName = '') =>
+    api.get(`/maritime/sanctions/vessel/${imo}`, { params: { vessel_name: vesselName } }),
+  screenEntitySanctions: (name: string) => api.get(`/maritime/sanctions/entity/${name}`),
+  screenRouteSanctions: (countries: string[]) =>
+    api.get('/maritime/sanctions/route', { params: { countries: countries.join(',') } }),
+  getRouteTariffs: (originCountry: string, destCountry: string, category = 'electronics') =>
+    api.get('/maritime/tariffs', { params: { origin_country: originCountry, destination_country: destCountry, product_category: category } }),
+  getPortCongestion: (portName: string) => api.get(`/maritime/port-congestion/${portName}`),
+  getAllPortCongestion: () => api.get('/maritime/port-congestion'),
+  resolveMMSI: (mmsi: string) => api.get(`/maritime/identity/resolve-mmsi/${mmsi}`),
+};
+
 export default api;

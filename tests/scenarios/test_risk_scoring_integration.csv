@@ -1,0 +1,7 @@
+test_id,shipment_id_ref,weather_risk_input,sanctions_risk_input,congestion_risk_input,registry_risk_input,tariff_risk_input,geopolitical_risk_input,cargo_value_usd,expected_composite_risk_score_min,expected_composite_risk_score_max,expected_risk_level,failure_mode_if_wrong,test_scenario_tag
+INT-001,SHP-TEST-020,low,low,low,low,low,low,280000,0.0,2.5,low,System is over-sensitizing clean routes - false positive inflation,INTEGRATION_ALL_LOW
+INT-002,SHP-TEST-006,low,critical,low,low,low,low,7200000,7.5,10.0,critical,Sanctions hit not properly escalating composite score - critical factor ignored,INTEGRATION_SANCTIONS_ESCALATION
+INT-003,SHP-TEST-001,high,low,high,low,low,low,2400000,5.5,8.0,high,Multi-factor aggregation not combining weather + congestion correctly,INTEGRATION_MULTI_HIGH
+INT-004,SHP-TEST-015,critical,critical,high,critical,high,critical,8900000,9.0,10.0,critical,Score capping or averaging error diluting maximum-risk scenario,INTEGRATION_ALL_CRITICAL
+INT-005,SHP-TEST-010,medium,medium,medium,medium,medium,medium,9500000,3.5,6.0,medium,Aggregation inflating or deflating uniform medium inputs,INTEGRATION_ALL_MEDIUM
+INT-006,SHP-TEST-016,medium,low,low,low,low,high,18000000,5.5,8.0,high,Cargo value not factored into scoring - high-value amplification missing,INTEGRATION_VALUE_AMPLIFICATION

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { loadDemoShipments } from '../services/shipmentData';
 import { useShipmentStore } from '../store/shipmentStore';
-import { networkApi } from '../services/api';
+import { networkApi, maritimeApi } from '../services/api';
 import ReactFlow, {
   Background,
   Controls,
@@ -10,7 +10,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import React from 'react';
-import { AlertTriangle, CheckCircle2, ExternalLink, Activity } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Activity, Anchor, MapPin, Shield, DollarSign } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // Re-use node styling from DigitalTwin
@@ -236,6 +236,11 @@ export function OperationsDashboard() {
         </div>
       </div>
 
+      {/* ── Maritime Intelligence Strip ── */}
+      <div className="px-8 pb-2">
+        <MaritimeStrip />
+      </div>
+
       {/* ── Supply Chain Health Bar ── */}
       <div className="px-8 pb-8">
         <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -262,6 +267,77 @@ export function OperationsDashboard() {
         </div>
       </div>
 
+    </div>
+  );
+}
+
+
+function MaritimeStrip() {
+  const { data: portData } = useQuery({
+    queryKey: ['port-congestion'],
+    queryFn: () => maritimeApi.getAllPortCongestion().then((res) => res.data),
+    refetchInterval: 120_000,
+  });
+
+  const { data: tariffData } = useQuery({
+    queryKey: ['tariffs-us-china'],
+    queryFn: () => maritimeApi.getRouteTariffs('CHN', 'USA', 'electronics').then((res) => res.data),
+    refetchInterval: 300_000,
+  });
+
+  const congestedPorts = portData?.congested_ports || [];
+  const tariffRate = tariffData?.average_rate || 0;
+  const tariffSeverity = tariffData?.severity || 'low';
+
+  const severityColor: Record<string, string> = {
+    critical: 'text-red-400',
+    high: 'text-orange-400',
+    medium: 'text-yellow-400',
+    low: 'text-green-400',
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-6 py-3 flex items-center gap-6 overflow-x-auto">
+      <div className="flex items-center gap-2 shrink-0">
+        <Anchor className="w-4 h-4 text-blue-400" />
+        <span className="text-xs font-semibold text-white uppercase tracking-wide">Maritime Intel</span>
+      </div>
+
+      <div className="h-6 w-px bg-slate-700" />
+
+      {/* Port Congestion */}
+      <div className="flex items-center gap-2 shrink-0">
+        <MapPin className="w-3.5 h-3.5 text-orange-400" />
+        <span className="text-xs text-slate-400">Congested Ports:</span>
+        <span className={`text-xs font-bold ${congestedPorts.length > 3 ? 'text-red-400' : congestedPorts.length > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+          {congestedPorts.length}
+        </span>
+        {congestedPorts.slice(0, 3).map((p: any) => (
+          <span key={p.port_name} className="text-xs text-slate-500 capitalize">
+            {p.port_name} ({p.congestion_ratio}x)
+          </span>
+        ))}
+      </div>
+
+      <div className="h-6 w-px bg-slate-700" />
+
+      {/* Tariff */}
+      <div className="flex items-center gap-2 shrink-0">
+        <DollarSign className="w-3.5 h-3.5 text-yellow-400" />
+        <span className="text-xs text-slate-400">CN→US Tariff:</span>
+        <span className={`text-xs font-bold ${severityColor[tariffSeverity]}`}>
+          {tariffRate}%
+        </span>
+      </div>
+
+      <div className="h-6 w-px bg-slate-700" />
+
+      {/* Sanctions */}
+      <div className="flex items-center gap-2 shrink-0">
+        <Shield className="w-3.5 h-3.5 text-emerald-400" />
+        <span className="text-xs text-slate-400">Sanctions:</span>
+        <span className="text-xs font-bold text-green-400">OFAC + UN Active</span>
+      </div>
     </div>
   );
 }
