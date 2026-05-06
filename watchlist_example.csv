@@ -1,0 +1,11 @@
+imo_number,vessel_name,linked_supplier,linked_shipment_id,notes
+9811000,EVER GIVEN,Supplier_A,SHP-001,Critical Suez route - Asia to Europe
+9461867,MSC OSCAR,Supplier_B,SHP-005,Gulf route monitoring
+9484525,CSCL GLOBE,Supplier_C,,Asia-Europe lane
+9708837,MOL TRIUMPH,Supplier_D,SHP-003,Transpacific service
+9839430,EVER ACE,Supplier_A,,World's largest container ship
+9795736,COSCO SHIPPING UNIVERSE,Supplier_E,SHP-007,Hong Kong flag - Intra-Asia
+9732319,MADRID MAERSK,Supplier_F,,Northern Europe service
+9619907,OOCL HONG KONG,Supplier_G,SHP-009,Asia-Europe express
+9246633,TI EUROPE,Supplier_H,,VLCC tanker - Gulf to Europe
+9454036,VALE BRASIL,Supplier_I,SHP-012,Iron ore bulk carrier - Brazil to China

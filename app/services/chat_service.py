@@ -67,6 +67,8 @@ class ChatService:
         weather_events: list[dict] | None = None,
         trade_events: list[dict] | None = None,
         network_summary: dict | None = None,
+        vessel_fleet_status: dict | None = None,
+        vessel_statuses: list[dict] | None = None,
     ) -> None:
         """Update the global context cache used to enrich chat answers.
 
@@ -83,6 +85,10 @@ class ChatService:
             self._global_context["trade_events"] = trade_events
         if network_summary is not None:
             self._global_context["network_summary"] = network_summary
+        if vessel_fleet_status is not None:
+            self._global_context["vessel_fleet_status"] = vessel_fleet_status
+        if vessel_statuses is not None:
+            self._global_context["vessel_statuses"] = vessel_statuses
 
     def get_global_context(self) -> dict[str, Any]:
         """Return the current global context snapshot."""
@@ -230,6 +236,32 @@ class ChatService:
                     f"  Total nodes: {net.get('total_nodes', 0)} | At risk: {net.get('at_risk_nodes', 0)}"
                 )
 
+            # --- Vessel fleet status (integration point: vessel tracking → chat) ---
+            if ctx.get("vessel_fleet_status"):
+                fleet = ctx["vessel_fleet_status"]
+                context_parts.append(
+                    f"\n=== VESSEL FLEET STATUS ===\n"
+                    f"  Total tracked: {fleet.get('total', 0)} | Active: {fleet.get('active', 0)} | "
+                    f"Stale: {fleet.get('stale', 0)} | AIS Silent: {fleet.get('silent', 0)} | "
+                    f"In danger zones: {fleet.get('in_danger_zone', 0)}"
+                )
+            if ctx.get("vessel_statuses"):
+                vessels = ctx["vessel_statuses"]
+                context_parts.append(f"\n=== TRACKED VESSELS ({len(vessels)}) ===")
+                for v in vessels[:15]:
+                    name = v.get("name", v.get("imo_number", "?"))
+                    status = v.get("status", "unknown")
+                    speed = v.get("speed", 0)
+                    dest = v.get("destination", "?")
+                    danger = v.get("in_danger_zone", "")
+                    supplier = v.get("linked_supplier", "")
+                    line = f"  [{status.upper()}] {name}: {speed:.1f}kts → {dest}"
+                    if danger:
+                        line += f" | ⚠ DANGER: {danger}"
+                    if supplier:
+                        line += f" | supplier: {supplier}"
+                    context_parts.append(line)
+
             context_text = "\n".join(context_parts) if context_parts else "No context data available yet."
 
             prompt = (
@@ -311,6 +343,15 @@ class ChatService:
         network = ctx.get("network_summary", {})
         if network and any(kw in q for kw in ["network", "supply chain", "overview", "status", "health", "summary"]):
             return self._summarize_network(q, network, risks, shipments)
+
+        # --- Vessel tracking questions ---
+        # Integration point: vessel fleet status feeds into chat advisor
+        vessel_statuses = ctx.get("vessel_statuses", [])
+        vessel_fleet = ctx.get("vessel_fleet_status", {})
+        if (vessel_statuses or vessel_fleet) and any(
+            kw in q for kw in ["vessel", "ship", "fleet", "imo", "ais", "maritime", "tracking", "route", "danger zone"]
+        ):
+            return self._summarize_vessels(q, vessel_statuses, vessel_fleet)
 
         return None
 
@@ -503,6 +544,79 @@ class ChatService:
         return {
             "answer": "\n".join(parts),
             "supporting_context": [],
+            "recommendations": recommendations,
+        }
+
+    def _summarize_vessels(self, q: str, vessel_statuses: list[dict], fleet_status: dict) -> dict:
+        """Summarize vessel tracking data for the user.
+
+        Integration point: allows users to ask about vessel positions,
+        fleet status, danger zones, and specific vessels by name.
+        """
+        parts = []
+        recommendations = []
+
+        # Fleet overview
+        if fleet_status:
+            total = fleet_status.get("total", 0)
+            active = fleet_status.get("active", 0)
+            stale = fleet_status.get("stale", 0)
+            silent = fleet_status.get("silent", 0)
+            in_danger = fleet_status.get("in_danger_zone", 0)
+
+            parts.append(f"**Fleet Status: {total} vessels tracked**")
+            parts.append(f"• 🟢 {active} active")
+            if stale:
+                parts.append(f"• 🟡 {stale} stale (no update > 1 hour)")
+            if silent:
+                parts.append(f"• 🔴 {silent} AIS silent (no signal > 6 hours)")
+            if in_danger:
+                parts.append(f"• ⚠️ {in_danger} in danger zones")
+
+        # Specific vessel query
+        q_lower = q.lower()
+        if vessel_statuses:
+            # Check if asking about a specific vessel
+            for v in vessel_statuses:
+                name = (v.get("name") or "").lower()
+                imo = v.get("imo_number", "")
+                if name and name in q_lower or imo in q_lower:
+                    parts.append(f"\n**{v.get('name', imo)}** (IMO: {imo})")
+                    parts.append(f"  Position: {v.get('latitude', 0):.4f}N, {v.get('longitude', 0):.4f}E")
+                    parts.append(f"  Speed: {v.get('speed', 0):.1f} kts | Course: {v.get('course', 0):.0f}°")
+                    parts.append(f"  Destination: {v.get('destination', 'Not declared')}")
+                    parts.append(f"  Status: {v.get('status', 'unknown')}")
+                    if v.get("in_danger_zone"):
+                        parts.append(f"  ⚠️ In danger zone: {v['in_danger_zone']}")
+                    if v.get("linked_supplier"):
+                        parts.append(f"  Linked to: {v['linked_supplier']}")
+                    break
+
+            # Danger zone query
+            if any(kw in q_lower for kw in ["danger", "red sea", "gulf", "hormuz", "piracy"]):
+                danger_vessels = [v for v in vessel_statuses if v.get("in_danger_zone")]
+                if danger_vessels:
+                    parts.append(f"\n**Vessels in danger zones ({len(danger_vessels)}):**")
+                    for v in danger_vessels[:5]:
+                        parts.append(f"  • {v.get('name', v['imo_number'])} — {v.get('in_danger_zone')}")
+                    recommendations.append("Monitor vessels in danger zones closely for AIS gaps or speed changes.")
+                    recommendations.append("Consider rerouting if risk escalates.")
+
+            # Silent vessels
+            if "silent" in q_lower or "ais" in q_lower:
+                silent_vessels = [v for v in vessel_statuses if v.get("status") == "silent"]
+                if silent_vessels:
+                    parts.append(f"\n**AIS Silent vessels ({len(silent_vessels)}):**")
+                    for v in silent_vessels[:5]:
+                        parts.append(f"  • {v.get('name', v['imo_number'])}")
+                    recommendations.append("Investigate AIS-silent vessels — may indicate equipment failure or intentional concealment.")
+
+        if not parts:
+            parts.append("Vessel tracking is active. Ask about specific vessels by name, fleet status, or danger zones.")
+
+        return {
+            "answer": "\n".join(parts),
+            "supporting_context": [f"Fleet: {fleet_status}"] if fleet_status else [],
             "recommendations": recommendations,
         }
 

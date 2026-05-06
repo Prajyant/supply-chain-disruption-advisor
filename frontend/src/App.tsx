@@ -10,6 +10,7 @@ import { Settings } from './pages/Settings';
 import { ShipmentDetail } from './pages/ShipmentDetail';
 import { Login } from './pages/Login';
 import { Playbooks } from './pages/Playbooks';
+import { VesselTracking } from './pages/VesselTracking';
 import { ViewModeProvider } from './context/ViewModeContext';
 import { GlobalChat } from './components/GlobalChat';
 import { triggerShipmentPreload } from './services/shipmentPreloader';
@@ -70,6 +71,7 @@ function App() {
               <Route path="digital-twin" element={<DigitalTwin />} />
               <Route path="chat" element={<Chat />} />
               <Route path="playbooks" element={<Playbooks />} />
+              <Route path="vessel-tracking" element={<VesselTracking />} />
               <Route path="settings" element={<Settings />} />
             </Route>
           </Routes>

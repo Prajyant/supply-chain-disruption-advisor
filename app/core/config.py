@@ -34,6 +34,15 @@ class Settings(BaseModel):
     ses_recipients_finance: str = os.getenv("SES_RECIPIENTS_FINANCE", "")
     ses_recipients_analyst: str = os.getenv("SES_RECIPIENTS_ANALYST", "")
     ses_recipients_executive: str = os.getenv("SES_RECIPIENTS_EXECUTIVE", "")
+    # === Vessel Tracking ===
+    ais_provider: str = os.getenv("AIS_PROVIDER", "demo")
+    ais_api_key: str | None = os.getenv("AIS_API_KEY") or None
+    watchlist_csv_path: str = os.getenv("WATCHLIST_CSV_PATH", "./watchlist.csv")
+    vessel_poll_interval_seconds: int = int(os.getenv("VESSEL_POLL_INTERVAL_SECONDS", "300"))
+    vessel_silence_threshold_hours: float = float(os.getenv("VESSEL_SILENCE_THRESHOLD_HOURS", "6"))
+    vessel_stale_threshold_hours: float = float(os.getenv("VESSEL_STALE_THRESHOLD_HOURS", "1"))
+    vessel_history_retention_days: int = int(os.getenv("VESSEL_HISTORY_RETENTION_DAYS", "90"))
+    vessel_identity_cache_days: int = int(os.getenv("VESSEL_IDENTITY_CACHE_DAYS", "30"))
 
 
 @lru_cache(maxsize=1)
