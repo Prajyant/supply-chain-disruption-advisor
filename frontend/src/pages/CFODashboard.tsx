@@ -78,7 +78,10 @@ export function CFODashboard() {
   const { uploadedShipments } = useShipmentStore();
 
   // Derive financial exposure from shipments (uploaded or demo)
-  const shipmentRows = (uploadedShipments || demoShipments).map((s) => {
+  const allShipments = uploadedShipments
+    ? [...demoShipments, ...uploadedShipments.filter(u => !demoShipments.some(d => d.shipment_id === u.shipment_id))]
+    : demoShipments;
+  const shipmentRows = allShipments.map((s) => {
     const materialLower = s.material?.toLowerCase() ?? '';
     let unitValue = 20;
     if (materialLower.includes('electron') || materialLower.includes('chip')) unitValue = 50;

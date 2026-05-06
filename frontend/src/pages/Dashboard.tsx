@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { shipmentApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
-import { ShipmentInput } from '../types';
 import {
   AlertTriangle,
   Activity,
@@ -36,7 +35,9 @@ export function Dashboard() {
     queryFn: loadDemoShipments,
   });
 
-  const shipments = uploadedShipments || demoShipments;
+  const shipments = uploadedShipments
+    ? [...demoShipments, ...uploadedShipments.filter(u => !demoShipments.some(d => d.shipment_id === u.shipment_id))]
+    : demoShipments;
 
   const uploadCsv = useMutation({
     mutationFn: (file: File) => shipmentApi.uploadCsv(file).then((res) => res.data),
@@ -154,7 +155,7 @@ export function Dashboard() {
             <div>
               <h2 className="text-lg font-semibold text-white">Supplier Shipment Test Feed</h2>
               <p className="text-sm text-slate-400">
-                {uploadedShipments ? 'Uploaded CSV' : 'Loaded from demo_shipments.csv'}
+                {uploadedShipments ? `Demo + ${uploadedShipments.length} uploaded` : 'Loaded from demo_shipments.csv'}
               </p>
             </div>
             <div className="flex items-center gap-3">

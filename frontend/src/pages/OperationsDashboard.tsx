@@ -42,7 +42,9 @@ export function OperationsDashboard() {
   });
 
   const { uploadedShipments } = useShipmentStore();
-  const shipments = uploadedShipments || demoShipments;
+  const shipments = uploadedShipments
+    ? [...demoShipments, ...uploadedShipments.filter(u => !demoShipments.some(d => d.shipment_id === u.shipment_id))]
+    : demoShipments;
 
   const { data: network, isLoading: netLoading } = useQuery({
     queryKey: ['network'],
