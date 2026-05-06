@@ -90,7 +90,15 @@ def get_strands_orchestrator_service() -> StrandsOrchestratorService:
 
 @lru_cache(maxsize=1)
 def get_advisor_service() -> AdvisorService:
-    return AdvisorService()
+    return AdvisorService(
+        ingestion_service=get_ingestion_service(),
+        risk_service=get_risk_service(),
+        chat_service=get_chat_service(),
+        graph_service=get_graph_service(),
+        shipment_tracker=get_shipment_tracker(),
+        playbook_engine=get_playbook_engine(),
+        feedback_service=get_feedback_service(),
+    )
 
 security = HTTPBearer(auto_error=False)
 
@@ -803,7 +811,7 @@ async def toggle_playbook(
 
 
 @router.post("/playbooks/executions/{execution_id}/feedback")
-def submit_playbook_feedback(
+async def submit_playbook_feedback(
     execution_id: str,
     decision: str,
     comment: Optional[str] = None,
@@ -835,7 +843,12 @@ def submit_playbook_feedback(
     if not result:
         raise HTTPException(status_code=409, detail="Feedback already exists for this execution")
 
-    return {"status": "ok", "feedback_id": result.feedback_id}
+    # Update the execution status so the UI reflects the decision
+    await advisor_service.playbook_engine.update_execution_status(
+        execution_id, status=decision, feedback=comment
+    )
+
+    return {"status": "ok", "feedback_id": result.feedback_id, "message": f"Feedback '{decision}' recorded successfully"}
 
 
 class SimulatePlaybookRequest(BaseModel):
@@ -859,7 +872,9 @@ async def simulate_playbook(
     )
     if not result:
         raise HTTPException(status_code=404, detail="Playbook not found")
-    return result.model_dump()
+    data = result.model_dump()
+    data["message"] = f"Simulated '{result.playbook_name}' on node {result.node_name}"
+    return data
 
 
 # ==================== FEEDBACK ENDPOINTS (Phase 3) ====================
@@ -868,7 +883,8 @@ async def simulate_playbook(
 @router.get("/feedback/stats")
 def get_feedback_stats(advisor_service: AdvisorService = Depends(get_advisor_service)) -> dict:
     """Get feedback statistics."""
-    return advisor_service.feedback_service.get_all_stats()
+    stats = advisor_service.feedback_service.get_all_stats()
+    return {"stats": [s.model_dump() for s in stats]}
 
 
 @router.get("/feedback/history")

@@ -28,7 +28,7 @@ from app.models.schemas import ShipmentInput
 logger = logging.getLogger(__name__)
 
 MODEL_PATH = Path("models/risk_model.pkl")
-MODEL_VERSION = "shipment-risk-v1"
+MODEL_VERSION = "shipment-risk-v2"
 
 FEATURE_NAMES = [
     "lead_time_days",
@@ -46,6 +46,15 @@ FEATURE_NAMES = [
     "is_air",
     "is_sea",
     "is_multimodal",
+    # --- V2 engineered features ---
+    "max_external_severity",
+    "external_signal_diversity",
+    "inventory_x_delays",
+    "urgency_pressure",
+    "marine_compound",
+    "geopolitical_compound",
+    "early_route_exposure",
+    "core_pressure",
 ]
 
 SEVERITY_SCORE = {
@@ -433,6 +442,40 @@ def extract_shipment_features(
         "is_multimodal": 1.0 if mode == "multimodal" else 0.0,
     }
 
+    # --- V2 engineered interaction features ---
+    ext_scores = [weather_score, marine_weather_score, trade_score, news_score]
+    features["max_external_severity"] = max(ext_scores)
+    features["external_signal_diversity"] = float(sum(1 for s in ext_scores if s >= 4.0))
+
+    inv_norm = inventory_pressure / 10.0
+    delay_norm = min(float(shipment.supplier_delay_count) / 5.0, 1.0)
+    features["inventory_x_delays"] = round(inv_norm * delay_norm * 10.0, 2)
+
+    pri_norm = priority_score_value(shipment.priority) / 10.0
+    features["urgency_pressure"] = round(pri_norm * inv_norm * 10.0, 2)
+
+    features["marine_compound"] = round(
+        (marine_weather_score / 10.0) * (vessel_score / 10.0) * 10.0, 2
+    ) if marine_weather_score > 0 and vessel_score > 0 else 0.0
+
+    features["geopolitical_compound"] = round(
+        (trade_score / 10.0) * (news_score / 10.0) * 10.0, 2
+    ) if trade_score > 0 and news_score > 0 else 0.0
+
+    features["early_route_exposure"] = round(
+        (route_progress_score / 10.0) * (features["max_external_severity"] / 10.0) * 10.0, 2
+    )
+
+    features["core_pressure"] = round(
+        min(features["lead_time_days"] / 45.0, 1.0) * 1.0
+        + inv_norm * 2.2
+        + delay_norm * 1.2
+        + pri_norm * 1.0
+        + min(features["declared_value_score"] / 10.0, 1.0) * 0.5
+        + min(vessel_score / 10.0, 1.0) * 1.2,
+        2,
+    )
+
     return features, signals, evidence_events
 
 
@@ -755,6 +798,13 @@ def heuristic_risk_score(features: dict[str, float]) -> float:
     score += min(features["marine_weather_score"] / 10.0, 1.0) * 0.8
     score += min(features["route_progress_score"] / 10.0, 1.0) * 0.5
     score += min(features["route_signal_count"] / 5.0, 1.0) * 0.8
+
+    # V2 interaction features contribute directly
+    score += min(features.get("inventory_x_delays", 0) / 10.0, 1.0) * 0.6
+    score += min(features.get("urgency_pressure", 0) / 10.0, 1.0) * 0.4
+    score += min(features.get("marine_compound", 0) / 10.0, 1.0) * 0.5
+    score += min(features.get("geopolitical_compound", 0) / 10.0, 1.0) * 0.4
+    score += min(features.get("early_route_exposure", 0) / 10.0, 1.0) * 0.3
 
     if features["is_air"]:
         score += 0.2

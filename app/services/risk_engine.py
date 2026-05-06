@@ -114,7 +114,121 @@ class RiskAnalyzer:
             return self._neutral_news_placeholder(event)
 
         text = str(event.get("text", ""))
+
+        # Use Gemini for semantic classification when available
+        if self._gemini_client:
+            result = self._gemini_email_classification(event, text)
+            if result is not None:
+                return result
+
+        # Fallback to keyword heuristic
         return self._email_heuristic_assessment(event=event, text=text.lower())
+
+    # -----------------------------------------------------------------------
+    # Gemini-powered email classification (Tier 1 upgrade)
+    # -----------------------------------------------------------------------
+
+    def _gemini_email_classification(self, event: dict[str, Any], text: str) -> RiskAssessment | None:
+        """Use Gemini to semantically classify an email's risk level.
+
+        Returns None if Gemini fails, so caller can fall back to heuristics.
+        """
+        metadata = dict(event.get("metadata", {})) if isinstance(event.get("metadata"), dict) else {}
+        supplier = (
+            event.get("supplier")
+            or metadata.get("sender_name")
+            or "Unknown Supplier"
+        )
+        subject = metadata.get("subject", "")
+
+        prompt = f"""You are a supply chain risk analyst. Classify this supplier email.
+
+Supplier: {supplier}
+Subject: {subject}
+Body: {text[:600]}
+
+Classify the email into exactly ONE JSON object with these fields:
+- "severity": "critical" | "high" | "medium" | "low"
+- "disruption_type": "logistics" | "financial" | "geopolitical" | "natural_disaster" | "operations" | "security"
+- "confidence": float 0.0-1.0 (how certain you are about the severity)
+- "signals": array of 1-3 specific risk phrases found in the email (empty array if routine)
+- "summary": 1 sentence explaining your classification
+
+Rules:
+- "low" = routine operational email, no problem reported (confirmations, updates, newsletters)
+- "medium" = minor issue mentioned (small delay, partial shortage, variance)
+- "high" = significant problem (strike, quality recall, major delay, production stopped)
+- "critical" = severe disruption (plant shutdown, bankruptcy, force majeure, factory fire)
+- Pay attention to NEGATIONS: "no delay" means low, not medium
+- Pay attention to CONTEXT: "shortage resolved" means low, not medium
+- Be conservative: if unsure, lean toward lower severity
+
+Return ONLY valid JSON. No markdown, no code fences."""
+
+        try:
+            response = self._gemini_client.models.generate_content(
+                model=self._gemini_model,
+                contents=prompt,
+            )
+            raw = response.text.strip()
+            raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+            raw = re.sub(r"\s*```$", "", raw)
+            raw = raw.strip()
+
+            # Extract JSON object
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not match:
+                return None
+
+            result = json.loads(match.group(0))
+
+            severity = str(result.get("severity", "low")).lower()
+            if severity not in {"low", "medium", "high", "critical"}:
+                severity = "low"
+
+            disruption_type = str(result.get("disruption_type", "operations")).lower()
+            valid_types = {"logistics", "financial", "geopolitical", "natural_disaster", "operations", "security"}
+            if disruption_type not in valid_types:
+                disruption_type = "operations"
+
+            confidence = float(result.get("confidence", 0.5))
+            confidence = max(0.0, min(1.0, confidence))
+
+            signals = [str(s) for s in result.get("signals", [])][:5]
+            if not signals and severity != "low":
+                signals = ["AI-detected risk signal"]
+
+            summary_text = str(result.get("summary", ""))
+            if not summary_text:
+                summary_text = (
+                    f"Supplier email from {supplier} classified as {severity.upper()} by AI analysis."
+                    if severity != "low"
+                    else f"Routine operational email from {supplier}. No risk signals detected."
+                )
+
+            return RiskAssessment(
+                risk_id=f"{event.get('source')}-{event.get('reference_id', '')}",
+                source=event.get("source", "unknown"),
+                reference_id=str(event.get("reference_id", "")),
+                detected_at=datetime.now(timezone.utc),
+                disruption_type=disruption_type,
+                severity=severity,
+                confidence=confidence,
+                signals=signals,
+                recommendations=RECOMMENDATION_MAP[severity],
+                summary=summary_text,
+                headline=subject or text[:60],
+                metadata={
+                    **metadata,
+                    "sender_name": supplier,
+                    "matched_signals": signals,
+                    "classification_method": "gemini",
+                },
+            )
+
+        except Exception as e:
+            logger.debug(f"Gemini email classification failed, falling back to heuristic: {e}")
+            return None
 
     # -----------------------------------------------------------------------
     # Tier 2: Predictive — Gemini cross-reference emails x news

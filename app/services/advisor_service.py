@@ -34,16 +34,25 @@ LOCATION_KEYWORDS: dict[str, list[str]] = {
 class AdvisorService:
     """Main service that orchestrates all supply chain disruption advisor services."""
 
-    def __init__(self) -> None:
-        self.ingestion_service = IngestionService()
-        self.risk_service = RiskService()
-        self.chat_service = ChatService()
-        self.graph_service = GraphService()
+    def __init__(
+        self,
+        ingestion_service: Optional[IngestionService] = None,
+        risk_service: Optional[RiskService] = None,
+        chat_service: Optional[ChatService] = None,
+        graph_service: Optional[GraphService] = None,
+        shipment_tracker: Optional[ShipmentTracker] = None,
+        playbook_engine: Optional[PlaybookEngine] = None,
+        feedback_service: Optional[FeedbackService] = None,
+    ) -> None:
+        self.ingestion_service = ingestion_service or IngestionService()
+        self.risk_service = risk_service or RiskService()
+        self.chat_service = chat_service or ChatService()
+        self.graph_service = graph_service or GraphService()
 
         # Phase 3: Shipment tracking, playbooks, feedback
-        self.shipment_tracker = ShipmentTracker()
-        self.playbook_engine = PlaybookEngine()
-        self.feedback_service = FeedbackService()
+        self.shipment_tracker = shipment_tracker or ShipmentTracker()
+        self.playbook_engine = playbook_engine or PlaybookEngine()
+        self.feedback_service = feedback_service or FeedbackService()
 
         # Context caches (populated at ingest time)
         self._cached_news_events: list[dict] = []

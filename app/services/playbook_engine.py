@@ -349,6 +349,14 @@ class PlaybookEngine:
             async with self._lock:
                 self._executions[execution.execution_id] = execution
 
+            # Record trigger in feedback stats for accurate counts
+            try:
+                from app.services.feedback_service import FeedbackService
+                feedback_svc = self._get_feedback_service()
+                feedback_svc.record_trigger(playbook.id)
+            except Exception:
+                pass  # Non-critical — don't block execution
+
             triggered.append(execution)
             logger.info(
                 f"Playbook triggered: '{playbook.name}' for risk {risk.risk_id} "
@@ -449,6 +457,20 @@ class PlaybookEngine:
     def get_execution(self, execution_id: str) -> Optional[PlaybookExecution]:
         """Get a single execution by ID."""
         return self._executions.get(execution_id)
+
+    async def evaluate_risks(
+        self, risks: list[RiskAssessment]
+    ) -> list[PlaybookExecution]:
+        """Evaluate a list of risks against all enabled playbooks.
+
+        Convenience wrapper around evaluate_risk() for batch processing.
+        Returns all triggered executions across all risks.
+        """
+        all_triggered: list[PlaybookExecution] = []
+        for risk in risks:
+            triggered = await self.evaluate_risk(risk)
+            all_triggered.extend(triggered)
+        return all_triggered
 
     async def update_execution_status(
         self, execution_id: str, status: str, feedback: Optional[str] = None
