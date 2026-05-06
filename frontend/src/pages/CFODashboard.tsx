@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { loadDemoShipments } from '../services/shipmentData';
 import { useShipmentStore } from '../store/shipmentStore';
+import { shipmentApi } from '../services/api';
 import {
   AreaChart,
   Area,
@@ -10,7 +12,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { ShieldAlert, Calendar, Lock, ArrowRight, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, Calendar, Lock, ArrowRight, AlertTriangle, ChevronDown, Package, Loader2, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 // ─── Hardcoded 30-day trend data with spike in last week ───────────────────
 function generateTrendData() {
@@ -66,6 +69,10 @@ const ACTION_FOR_LEVEL: Record<string, string> = {
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 export function CFODashboard() {
+  const navigate = useNavigate();
+  const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
@@ -81,6 +88,15 @@ export function CFODashboard() {
   const allShipments = uploadedShipments
     ? [...demoShipments, ...uploadedShipments.filter(u => !demoShipments.some(d => d.shipment_id === u.shipment_id))]
     : demoShipments;
+
+  // Fetch preloaded risk analysis for selected shipment
+  const { data: selectedAnalysis, isLoading: analysisLoading } = useQuery({
+    queryKey: ['shipment-preloaded-cfo', selectedShipmentId],
+    queryFn: () => shipmentApi.getPreloadedAnalysis(selectedShipmentId!).then(res => res.data),
+    enabled: !!selectedShipmentId,
+    retry: false,
+  });
+
   const shipmentRows = allShipments.map((s) => {
     const materialLower = s.material?.toLowerCase() ?? '';
     let unitValue = 20;
@@ -89,10 +105,22 @@ export function CFODashboard() {
     else if (materialLower.includes('chemical') || materialLower.includes('plastic')) unitValue = 12;
     else if (s.declared_value_usd > 0 && s.quantity > 0) unitValue = s.declared_value_usd / s.quantity;
 
-    const riskScore = 5 + Math.random() * 5; // illustrative
+    // Calculate risk score from actual shipment data instead of random
+    let riskScore = 3.0;
+    if (s.inventory_days_cover <= 5) riskScore += 3.0;
+    else if (s.inventory_days_cover <= 10) riskScore += 2.0;
+    else if (s.inventory_days_cover <= 15) riskScore += 1.0;
+    if (s.supplier_delay_count >= 5) riskScore += 2.0;
+    else if (s.supplier_delay_count >= 3) riskScore += 1.5;
+    else if (s.supplier_delay_count >= 1) riskScore += 0.5;
+    if (s.lead_time_days >= 30) riskScore += 1.5;
+    else if (s.lead_time_days >= 20) riskScore += 1.0;
+    if (s.declared_value_usd > 500000) riskScore += 0.5;
+    riskScore = Math.min(10, Math.max(0, riskScore));
+
     const exposure = s.quantity * unitValue * (riskScore / 10);
     const level = riskLevelFromScore(riskScore);
-    return { ...s, riskScore, exposure, level };
+    return { ...s, riskScore: Math.round(riskScore * 10) / 10, exposure: Math.round(exposure), level };
   }).sort((a, b) => b.exposure - a.exposure);
 
   const highCritical = shipmentRows.filter(r => r.level === 'high' || r.level === 'critical');
@@ -137,6 +165,120 @@ export function CFODashboard() {
           Prepared for Executive Leadership<br />Automatically generated · Not for distribution
         </div>
       </header>
+
+      {/* ── Shipment Selector ── */}
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Package className="w-5 h-5 text-amber-400" />
+            <span className="text-base font-semibold text-white">Inspect Shipment</span>
+          </div>
+          <div className="relative flex-1 max-w-lg">
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-lg border border-slate-700 bg-slate-800 hover:border-slate-600 transition-colors text-left"
+            >
+              <span className={`text-sm ${selectedShipmentId ? 'text-white' : 'text-slate-400'}`}>
+                {allShipments.find(s => s.shipment_id === selectedShipmentId)
+                  ? `${selectedShipmentId} — ${allShipments.find(s => s.shipment_id === selectedShipmentId)!.supplier}`
+                  : 'Select a shipment for detailed financial analysis...'}
+              </span>
+              <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {dropdownOpen && (
+              <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800 shadow-xl">
+                {allShipments.map((s) => (
+                  <button
+                    key={s.shipment_id}
+                    onClick={() => { setSelectedShipmentId(s.shipment_id); setDropdownOpen(false); }}
+                    className={`w-full text-left px-4 py-2.5 hover:bg-slate-700/50 transition-colors border-b border-slate-700/50 last:border-0 ${
+                      s.shipment_id === selectedShipmentId ? 'bg-amber-500/10 border-l-2 border-l-amber-500' : ''
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-white">{s.shipment_id}</span>
+                      <span className="text-xs text-slate-500">${(s.declared_value_usd / 1000).toFixed(0)}K</span>
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      {s.supplier} · {s.origin} → {s.destination} · {s.material}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {selectedShipmentId && (
+            <button
+              onClick={() => navigate(`/shipments/${selectedShipmentId}`)}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-amber-300 border border-amber-500/30 bg-amber-500/10 rounded-lg hover:bg-amber-500/20 transition-colors"
+            >
+              Full Analysis <ExternalLink className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+
+        {/* Selected Shipment Financial Detail */}
+        {selectedShipmentId && (() => {
+          const row = shipmentRows.find(r => r.shipment_id === selectedShipmentId);
+          if (!row) return null;
+          return (
+            <div className="mt-5 pt-5 border-t border-slate-800">
+              {analysisLoading ? (
+                <div className="flex items-center gap-2 text-slate-400 text-sm py-4">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Loading analysis...
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Financial Exposure</p>
+                    <p className="text-lg font-bold text-amber-400 mt-0.5">${formatMillions(row.exposure)}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Risk Score</p>
+                    <p className={`text-lg font-bold mt-0.5 ${row.level === 'critical' ? 'text-red-400' : row.level === 'high' ? 'text-orange-400' : 'text-yellow-400'}`}>
+                      {selectedAnalysis?.result?.risk_score ?? row.riskScore}/10
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Inventory Cover</p>
+                    <p className={`text-lg font-bold mt-0.5 ${row.inventory_days_cover <= 7 ? 'text-red-400' : row.inventory_days_cover <= 14 ? 'text-yellow-400' : 'text-green-400'}`}>
+                      {row.inventory_days_cover}d
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Declared Value</p>
+                    <p className="text-lg font-bold text-white mt-0.5">${formatMillions(row.declared_value_usd)}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Supplier Delays</p>
+                    <p className={`text-lg font-bold mt-0.5 ${row.supplier_delay_count >= 3 ? 'text-orange-400' : 'text-slate-200'}`}>
+                      {row.supplier_delay_count}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-4 py-3">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wide">Action Required</p>
+                    <p className="text-xs font-medium text-slate-300 mt-1">{ACTION_FOR_LEVEL[row.level]}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Signals from preloaded analysis */}
+              {selectedAnalysis?.result?.signals && selectedAnalysis.result.signals.length > 0 && (
+                <div className="mt-4 p-4 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                  <p className="text-xs font-semibold text-amber-400 uppercase tracking-wide mb-2">Risk Signals</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedAnalysis.result.signals.map((signal: string, i: number) => (
+                      <span key={i} className="text-xs px-2.5 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                        {signal}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </section>
 
       {/* ── Hero Metric ── */}
       <section className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/5 via-slate-900 to-slate-900 p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-8">
