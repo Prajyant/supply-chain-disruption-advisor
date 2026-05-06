@@ -1,6 +1,6 @@
 # Supply Chain Disruption Advisor
 
-An AI-powered platform that ingests supplier signals, detects disruption risks using predictive cross-referencing, and recommends mitigation actions — with a real-time digital twin, multi-agent debate system, and Bedrock-powered advisory chat.
+An AI-powered platform that ingests supplier signals, detects disruption risks using predictive cross-referencing, and recommends mitigation actions — with a real-time digital twin, multi-agent debate system, maritime intelligence, and Bedrock-powered advisory chat.
 
 ## Features
 
@@ -9,6 +9,7 @@ An AI-powered platform that ingests supplier signals, detects disruption risks u
 - **Digital Twin**: Interactive supply chain network graph with risk propagation and node-level context cards
 - **AI Chat Advisor**: Bedrock Claude-powered chat with full system awareness (risks, shipments, weather, trade, network)
 - **Shipment Tracking**: Real-time shipment status with per-shipment risk scoring and resolution packages
+- **Maritime Intelligence**: Per-shipment route calculation, port congestion monitoring, sanctions screening, vessel registry checks, and tariff analysis
 - **Live Intelligence**: Weather monitoring, trade policy tracking, vessel tracking, and flight tracking
 - **Automated Playbooks**: Rule-based automation that triggers actions when risk thresholds are crossed
 - **Role-Based Dashboards**: Operations view, CFO view, and standard risk dashboard
@@ -38,6 +39,12 @@ app/
  │   ├── weather_monitor.py   # Open-Meteo weather + marine data
  │   ├── trade_monitor.py     # Trade policy event tracking
  │   ├── vessel_tracker.py    # Vessel position tracking (IMO)
+ │   ├── vessel_registry.py   # Equasis inspections + ITU MARS identity
+ │   ├── route_calculator.py  # Searoute nautical mile distance + ETA
+ │   ├── sanctions_monitor.py # OFAC SDN + UN sanctions screening
+ │   ├── tariff_monitor.py    # WTO/WITS tariff rate monitoring
+ │   ├── port_congestion.py   # UNCTAD port turnaround + congestion
+ │   ├── supply_hub.py        # Open Supply Hub facility graph data
  │   ├── flight_tracker.py    # Flight/air cargo tracking
  │   ├── worldmonitor.py      # World news aggregation
  │   └── rss_utils.py         # RSS feed parsing
@@ -66,21 +73,22 @@ app/
 frontend/
  ├── src/
  │   ├── components/
- │   │   ├── GlobalChat.tsx        # Floating AI chat widget
- │   │   ├── VesselMap.tsx         # Interactive vessel map
- │   │   ├── WeatherOverlay.tsx    # Weather visualization
- │   │   ├── RiskCard.tsx          # Risk display cards
- │   │   ├── ResolutionPackage.tsx # Resolution action cards
- │   │   ├── ShipmentTracker.tsx   # Shipment status component
- │   │   ├── NodeDetail.tsx        # Graph node context card
- │   │   ├── RouteLines.tsx        # Route visualization
+ │   │   ├── GlobalChat.tsx           # Floating AI chat widget
+ │   │   ├── MaritimeIntelligence.tsx # Maritime intel overview panel
+ │   │   ├── VesselMap.tsx            # Interactive vessel map
+ │   │   ├── WeatherOverlay.tsx       # Weather visualization
+ │   │   ├── RiskCard.tsx             # Risk display cards
+ │   │   ├── ResolutionPackage.tsx    # Resolution action cards
+ │   │   ├── ShipmentTracker.tsx      # Shipment status component
+ │   │   ├── NodeDetail.tsx           # Graph node context card
+ │   │   ├── RouteLines.tsx           # Route visualization
  │   │   └── ...
  │   ├── pages/
  │   │   ├── Dashboard.tsx         # Main risk dashboard
  │   │   ├── CFODashboard.tsx      # Financial impact view
- │   │   ├── OperationsDashboard.tsx # Operations view
+ │   │   ├── OperationsDashboard.tsx # Operations view + maritime strip
  │   │   ├── DigitalTwin.tsx       # Network graph visualization
- │   │   ├── ShipmentDetail.tsx    # Per-shipment deep dive
+ │   │   ├── ShipmentDetail.tsx    # Per-shipment deep dive + maritime intel
  │   │   ├── Chat.tsx              # Full-page chat interface
  │   │   ├── Playbooks.tsx         # Playbook management
  │   │   └── Settings.tsx          # App settings
@@ -90,6 +98,28 @@ frontend/
  │   └── types/        # TypeScript types
  └── public/           # Static assets + demo data
 ```
+
+## Maritime Intelligence
+
+Per-shipment maritime intelligence is calculated when you open a shipment detail page. All data sources are **free** and require no paid API keys.
+
+| Data Source | What It Provides | Credentials |
+|---|---|---|
+| **Searoute** | Realistic sea route distance (nm) + ETA calculation | None (pip package) |
+| **OFAC SDN List** | US sanctions screening for vessels/entities | None (public CSV) |
+| **UN Security Council** | International sanctions screening | None (public XML) |
+| **UNCTAD** | Port congestion / turnaround times | None (public data) |
+| **Equasis** | Vessel inspections, detentions, deficiencies | Free account at equasis.org |
+| **ITU MARS** | MMSI ↔ IMO identity resolution | None (public web) |
+| **WTO/WITS** | Tariff rates by country/product (HS codes) | None (public API) |
+| **Open Supply Hub** | Factory/supplier locations + ownership | Optional free token |
+
+### What gets calculated per shipment:
+- **Route distance** — actual nautical miles via sea lanes (not straight line)
+- **Port congestion** — turnaround time and congestion ratio for origin + destination ports
+- **Sanctions screening** — vessel IMO checked against OFAC + UN lists
+- **Vessel registry** — inspection history, detention count, deficiencies, build year → risk score
+- **Tariff exposure** — applied tariff rates for the trade route and product category
 
 ## Quickstart
 
@@ -141,6 +171,14 @@ BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-20250514-v1:0
 JWT_SECRET=your-secret-key-change-in-production
 FIREBASE_PROJECT_ID=your-firebase-project-id
 
+# Vessel Registry (free account at equasis.org)
+EQUASIS_USERNAME=your-email@example.com
+EQUASIS_PASSWORD=your-password
+
+# Vessel Tracking (demo mode by default, no key needed)
+AIS_PROVIDER=demo
+AIS_API_KEY=
+
 # Database
 DATABASE_URL=sqlite:///./supply_chain.db
 ```
@@ -160,12 +198,26 @@ DATABASE_URL=sqlite:///./supply_chain.db
 
 ### Shipments
 - `GET /shipments` — All tracked shipments
-- `GET /shipments/node/{node_id}` — Shipments for a node
+- `POST /shipments/upload-csv` — Upload shipment CSV
 - `POST /shipments/risk-score` — Score a shipment's risk
 - `POST /shipments/risk-advice` — Get Bedrock mitigation advice
 - `POST /shipments/resolution-package` — Full resolution package with financial impact
 - `POST /shipments/preload` — Background preload all shipment analyses
 - `GET /shipments/{id}/preloaded` — Get cached analysis
+- `GET /shipments/risk-summary` — Aggregate risk metrics
+
+### Maritime Intelligence
+- `GET /maritime/route-distance?origin=...&destination=...` — Sea route distance + ETA (Searoute)
+- `GET /maritime/route-deviation?vessel_lat=...&vessel_lon=...&origin=...&destination=...` — Off-route detection
+- `GET /maritime/vessel-registry/{imo}` — Equasis inspection/detention data + risk score
+- `GET /maritime/sanctions/vessel/{imo}` — OFAC + UN vessel sanctions screening
+- `GET /maritime/sanctions/entity/{name}` — Entity sanctions check
+- `GET /maritime/sanctions/route?countries=...` — Country route sanctions exposure
+- `GET /maritime/tariffs?origin_country=...&destination_country=...&product_category=...` — WTO/WITS tariff rates
+- `GET /maritime/port-congestion/{port_name}` — Single port congestion status
+- `GET /maritime/port-congestion` — All congested ports
+- `GET /maritime/supply-hub/search?query=...&country=...` — Open Supply Hub facility search
+- `GET /maritime/identity/resolve-mmsi/{mmsi}` — ITU MARS MMSI→IMO resolution
 
 ### Agents
 - `POST /agents/strands/shipment-risk` — Run Strands-orchestrated risk workflow
@@ -174,7 +226,7 @@ DATABASE_URL=sqlite:///./supply_chain.db
 ### Network / Digital Twin
 - `GET /network` — Full supply chain graph
 - `GET /node/{id}` — Node details
-- `GET /node/{id}/context` — Full enriched node context (shipments, orders, risks, news)
+- `GET /node/{id}/context` — Full enriched node context
 - `GET /node/{id}/impact` — Upstream/downstream impact analysis
 - `POST /graph/propagate` — Trigger risk propagation
 - `POST /graph/score-nodes` — Score nodes using live intelligence
@@ -196,6 +248,15 @@ DATABASE_URL=sqlite:///./supply_chain.db
 
 ### Vessels
 - `GET /vessels/{imo_number}` — Vessel telemetry by IMO
+- `GET /vessels/watchlist` — All tracked vessels with status
+- `GET /vessels/fleet-status` — Fleet summary (active/stale/silent)
+- `GET /vessels/{imo}/status` — Real-time vessel status
+- `GET /vessels/{imo}/track` — Historical position track
+
+### Email Alerts
+- `POST /email/send` — Send custom email via AWS SES
+- `POST /email/risk-alert` — Send role-routed risk alert
+- `GET /email/routing-rules` — View email routing configuration
 
 ### Feedback
 - `GET /feedback/stats` — Feedback statistics
@@ -203,6 +264,9 @@ DATABASE_URL=sqlite:///./supply_chain.db
 
 ### WebSocket
 - `WS /ws/{subscription}` — Real-time updates (risks, network, alerts, all)
+
+### Health
+- `GET /health` — Health check
 
 ## Tech Stack
 
@@ -217,7 +281,9 @@ DATABASE_URL=sqlite:///./supply_chain.db
 | Auth | JWT + Firebase Admin |
 | Search | TF-IDF + cosine similarity |
 | ML | XGBoost (shipment risk scoring) |
+| Maritime | Searoute, OFAC, UN Sanctions, UNCTAD, Equasis, WTO/WITS |
 | Real-time | WebSockets |
+| Email | AWS SES (role-based routing) |
 
 ## Demo Credentials
 
