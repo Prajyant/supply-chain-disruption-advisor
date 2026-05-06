@@ -390,12 +390,20 @@ export function OperationsDashboard() {
 
       {/* ── Maritime Intelligence Strip ── */}
       <div className="px-8 pb-2">
-        <MaritimeStrip />
+        <MaritimeStrip
+          selectedOrigin={selectedShipment?.origin}
+          selectedDestination={selectedShipment?.destination}
+        />
       </div>
 
       {/* ── Full Maritime Intelligence Panel ── */}
       <div className="px-8 pb-4">
-        <MaritimeIntelligencePanel />
+        <MaritimeIntelligencePanel
+          selectedOrigin={selectedShipment?.origin}
+          selectedDestination={selectedShipment?.destination}
+          selectedVesselImo={selectedShipment?.imo_number}
+          selectedVesselName={selectedShipment?.vessel_name}
+        />
       </div>
 
       {/* ── Supply Chain Health Bar ── */}
@@ -446,10 +454,33 @@ function MetricCard({ label, value, color }: { label: string; value: string; col
 }
 
 
-function MaritimeStrip() {
+function MaritimeStrip({
+  selectedOrigin,
+  selectedDestination,
+}: {
+  selectedOrigin?: string | null;
+  selectedDestination?: string | null;
+}) {
+  const hasSelection = !!(selectedOrigin && selectedDestination);
+
   const { data: portData } = useQuery({
     queryKey: ['port-congestion'],
     queryFn: () => maritimeApi.getAllPortCongestion().then((res) => res.data),
+    refetchInterval: 120_000,
+    enabled: !hasSelection,
+  });
+
+  const { data: originPortData } = useQuery({
+    queryKey: ['port-congestion-origin-strip', selectedOrigin],
+    queryFn: () => maritimeApi.getPortCongestion(selectedOrigin!).then((res) => res.data),
+    enabled: !!selectedOrigin,
+    refetchInterval: 120_000,
+  });
+
+  const { data: destPortData } = useQuery({
+    queryKey: ['port-congestion-dest-strip', selectedDestination],
+    queryFn: () => maritimeApi.getPortCongestion(selectedDestination!).then((res) => res.data),
+    enabled: !!selectedDestination,
     refetchInterval: 120_000,
   });
 
@@ -459,7 +490,18 @@ function MaritimeStrip() {
     refetchInterval: 300_000,
   });
 
-  const congestedPorts = portData?.congested_ports || [];
+  let congestedPorts: any[] = [];
+  if (hasSelection) {
+    if (originPortData && originPortData.congestion_ratio > 1.2) {
+      congestedPorts.push({ port_name: selectedOrigin, congestion_ratio: originPortData.congestion_ratio });
+    }
+    if (destPortData && destPortData.congestion_ratio > 1.2) {
+      congestedPorts.push({ port_name: selectedDestination, congestion_ratio: destPortData.congestion_ratio });
+    }
+  } else {
+    congestedPorts = portData?.congested_ports || [];
+  }
+
   const tariffRate = tariffData?.average_rate || 0;
   const tariffSeverity = tariffData?.severity || 'low';
 
@@ -482,9 +524,9 @@ function MaritimeStrip() {
       {/* Port Congestion */}
       <div className="flex items-center gap-2 shrink-0">
         <MapPin className="w-3.5 h-3.5 text-orange-400" />
-        <span className="text-xs text-slate-400">Congested Ports:</span>
-        <span className={`text-xs font-bold ${congestedPorts.length > 3 ? 'text-red-400' : congestedPorts.length > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-          {congestedPorts.length}
+        <span className="text-xs text-slate-400">{hasSelection ? 'Route Ports:' : 'Congested Ports:'}</span>
+        <span className={`text-xs font-bold ${congestedPorts.length > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+          {hasSelection ? (congestedPorts.length > 0 ? `${congestedPorts.length} congested` : 'Clear') : congestedPorts.length}
         </span>
         {congestedPorts.slice(0, 3).map((p: any) => (
           <span key={p.port_name} className="text-xs text-slate-500 capitalize">
@@ -516,10 +558,25 @@ function MaritimeStrip() {
   );
 }
 
-function MaritimeIntelligencePanel() {
+function MaritimeIntelligencePanel({
+  selectedOrigin,
+  selectedDestination,
+  selectedVesselImo,
+  selectedVesselName,
+}: {
+  selectedOrigin?: string | null;
+  selectedDestination?: string | null;
+  selectedVesselImo?: string | null;
+  selectedVesselName?: string | null;
+}) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
-      <MaritimeIntelligence />
+      <MaritimeIntelligence
+        selectedOrigin={selectedOrigin}
+        selectedDestination={selectedDestination}
+        selectedVesselImo={selectedVesselImo}
+        selectedVesselName={selectedVesselName}
+      />
     </div>
   );
 }
