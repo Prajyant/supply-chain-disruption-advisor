@@ -292,15 +292,23 @@ class RiskWorker(BackgroundWorker):
         """Send SES email notification for a critical/high risk."""
         try:
             from app.services.email_service import EmailService
+            from app.services.risk_engine import RECOMMENDATION_MAP
             email_service = EmailService()
 
             metadata = risk.get("metadata", {}) or {}
+            severity = risk.get("severity", "critical")
+
+            # Use risk recommendations if available, otherwise fall back to severity-based actions
+            recommendations = risk.get("recommendations", [])
+            if not recommendations:
+                recommendations = RECOMMENDATION_MAP.get(severity, RECOMMENDATION_MAP.get("high", []))
+
             result = email_service.send_routed_alert(
-                risk_severity=risk.get("severity", "critical"),
+                risk_severity=severity,
                 risk_headline=risk.get("headline", risk.get("summary", "Supply chain risk detected")),
                 supplier=metadata.get("sender_name", metadata.get("supplier", "")),
                 disruption_type=risk.get("disruption_type", ""),
-                recommendations=risk.get("recommendations", []),
+                recommendations=recommendations,
             )
             if result.success:
                 logger.info(

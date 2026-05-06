@@ -294,6 +294,7 @@ class ShipmentRiskService:
         """Send SES email notification for high/critical shipment risk scores."""
         try:
             from app.services.email_service import EmailService
+            from app.services.risk_engine import RECOMMENDATION_MAP
 
             email_service = EmailService()
             risk_level = result["risk_level"]
@@ -305,13 +306,17 @@ class ShipmentRiskService:
             headline = (
                 f"Shipment {shipment.shipment_id} — Risk Score {score}/10 ({risk_level.upper()})"
             )
-            recommendations = [
-                f"Route: {shipment.origin} → {shipment.destination}",
-                f"Material: {shipment.material}",
-                f"Supplier: {shipment.supplier}",
-            ]
+
+            # Build recommended actions from the risk engine's action map
+            recommendations = list(RECOMMENDATION_MAP.get(ses_severity, RECOMMENDATION_MAP["high"]))
+
+            # Add shipment-specific context as additional actions
             if result.get("signals"):
-                recommendations.append(f"Top signal: {result['signals'][0]}")
+                recommendations.append(f"Investigate top signal: {result['signals'][0]}")
+            recommendations.append(
+                f"Review shipment route: {shipment.origin} → {shipment.destination} "
+                f"({shipment.material}, supplier: {shipment.supplier})"
+            )
 
             email_result = email_service.send_routed_alert(
                 risk_severity=ses_severity,
