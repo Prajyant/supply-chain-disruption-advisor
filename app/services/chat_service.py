@@ -37,11 +37,23 @@ class ChatService:
             self._init_bedrock()
 
     def _init_bedrock(self) -> None:
-        """Initialize Bedrock client for chat reasoning."""
+        """Initialize the chat LLM client (Groq preferred, Bedrock fallback)."""
         try:
-            import boto3
             from app.core.config import get_settings
             settings = get_settings()
+
+            # Prefer Groq when configured; fall back to Bedrock otherwise.
+            if settings.groq_api_key:
+                from app.services.groq_client import GroqConverseClient
+
+                groq_client = GroqConverseClient()
+                if groq_client.available:
+                    self._bedrock_client = groq_client
+                    self._bedrock_model_id = settings.groq_model
+                    logger.info("Chat LLM backend: Groq (model=%s)", self._bedrock_model_id)
+                    return
+
+            import boto3
             self._bedrock_model_id = settings.bedrock_model_id
             self._bedrock_client = boto3.client(
                 "bedrock-runtime",
@@ -52,7 +64,7 @@ class ChatService:
             )
             logger.info("Chat Bedrock client initialized: model=%s", self._bedrock_model_id)
         except Exception as exc:
-            logger.warning("Chat Bedrock initialization failed (will use heuristics): %s", exc)
+            logger.warning("Chat LLM initialization failed (will use heuristics): %s", exc)
             self._bedrock_client = None
 
     def set_index(self, index: RetrievalIndex) -> None:

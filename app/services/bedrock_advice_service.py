@@ -118,6 +118,21 @@ class BedrockAdviceService:
         settings = get_settings()
         self._model_id = settings.bedrock_model_id
 
+        # Prefer Groq when configured; fall back to Bedrock otherwise.
+        if settings.groq_api_key:
+            try:
+                from app.services.groq_client import GroqConverseClient
+
+                groq_client = GroqConverseClient()
+                if groq_client.available:
+                    self._client = groq_client
+                    self._model_id = settings.groq_model
+                    self._last_error = None
+                    logger.info("Advice LLM backend: Groq (model=%s)", self._model_id)
+                    return
+            except Exception as exc:
+                logger.warning("Groq advice initialization failed, falling back to Bedrock: %s", exc)
+
         if not boto3:
             self._last_error = "boto3_not_installed"
             return

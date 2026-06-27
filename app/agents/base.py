@@ -33,7 +33,21 @@ class BedrockAgent:
         self.system_prompt = system_prompt
         self.settings = get_settings()
         self.model_id = model_id or self.settings.bedrock_model_id
-        
+
+        # Prefer Groq when configured; fall back to Bedrock otherwise.
+        if self.settings.groq_api_key:
+            try:
+                from app.services.groq_client import GroqConverseClient
+
+                groq_client = GroqConverseClient()
+                if groq_client.available:
+                    self.client = groq_client
+                    self.model_id = self.settings.groq_model
+                    logger.info("Agent LLM backend: Groq (model=%s)", self.model_id)
+                    return
+            except Exception as e:
+                logger.warning(f"Groq client init failed, falling back to Bedrock: {e}")
+
         if not boto3 or not self.settings.aws_access_key_id:
             logger.warning("Bedrock SDK not available or AWS credentials missing.")
             self.client = None

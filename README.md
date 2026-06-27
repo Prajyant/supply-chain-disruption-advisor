@@ -14,7 +14,7 @@ An AI-powered platform that ingests supplier signals, detects disruption risks u
 - **Automated Playbooks**: Rule-based automation that triggers actions when risk thresholds are crossed
 - **Role-Based Dashboards**: Operations view, CFO view, and standard risk dashboard
 - **Real-Time Updates**: WebSocket-based live notifications for risks, network changes, and playbook executions
-- **Authentication**: JWT + Firebase Auth with role-based access control (RBAC)
+- **Authentication**: JWT-based authentication with role-based access control (RBAC)
 
 ## Architecture
 
@@ -30,7 +30,7 @@ app/
  │   ├── supply_chain_agent.py # Strands-based supply chain agent
  │   └── debate_orchestrator.py # Multi-agent debate coordinator
  ├── api/              # REST + WebSocket endpoints
- ├── auth/             # JWT + Firebase + RBAC
+ ├── auth/             # JWT + RBAC
  ├── background/       # Background job workers
  ├── core/             # Configuration
  ├── graph/            # Digital twin network model
@@ -167,7 +167,6 @@ BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-20250514-v1:0
 
 # Auth
 JWT_SECRET=your-secret-key-change-in-production
-FIREBASE_PROJECT_ID=your-firebase-project-id
 
 # Vessel Registry (free account at equasis.org)
 EQUASIS_USERNAME=your-email@example.com
@@ -276,7 +275,7 @@ DATABASE_URL=sqlite:///./supply_chain.db
 | Frontend | React, TypeScript, Vite, TailwindCSS |
 | State | Zustand, React Query |
 | Maps | Leaflet |
-| Auth | JWT + Firebase Admin |
+| Auth | JWT |
 | Search | TF-IDF + cosine similarity |
 | ML | XGBoost (shipment risk scoring) |
 | Maritime | Searoute, OFAC, UN Sanctions, UNCTAD, Equasis, WTO/WITS |
