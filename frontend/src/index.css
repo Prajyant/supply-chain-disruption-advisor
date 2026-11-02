@@ -74,3 +74,9 @@
     background: currentColor;
   }
 }
+
+/* ==================== Dark map tiles (OpenStreetMap) ==================== */
+/* Inverts light OSM tiles to produce a dark basemap without needing an API key */
+.map-tiles-dark {
+  filter: invert(100%) hue-rotate(180deg) brightness(0.85) contrast(0.9);
+}

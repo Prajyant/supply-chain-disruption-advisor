@@ -1715,6 +1715,34 @@ async def get_uploaded_shipments() -> dict:
         return {"shipments": [], "count": 0, "source": "error"}
 
 
+# ==================== MULTI-AGENT DEBATE ENDPOINT ====================
+
+
+class DebateRequest(BaseModel):
+    risk_id: str
+    context: str
+
+
+@router.post("/agents/debate")
+async def run_debate(req: DebateRequest) -> dict:
+    """Run a multi-agent debate on a risk scenario.
+
+    The debate system runs 3 specialized agents (Risk, Cost, Speed) concurrently,
+    then synthesizes their opinions into a balanced final decision.
+
+    Args:
+        req: Debate request with risk_id and context
+
+    Returns:
+        DebateResult with opinions, final decision, and financial impact
+    """
+    from app.agents.debate_orchestrator import DebateOrchestrator
+
+    orchestrator = DebateOrchestrator()
+    result = await orchestrator.debate(req.risk_id, req.context)
+    return result.model_dump()
+
+
 # ==================== HEALTH ENDPOINT ====================
 
 

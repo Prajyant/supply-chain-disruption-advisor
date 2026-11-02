@@ -438,3 +438,26 @@ class ResolutionPackage(BaseModel):
     internal_escalation_email: ResolutionEmail
     cfo_summary: CFOSummary
 
+
+
+# ==================== MULTI-AGENT DEBATE SCHEMAS ====================
+
+
+class AgentOpinion(BaseModel):
+    """A single agent's opinion in the debate system."""
+    agent_name: str
+    recommendation: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    key_argument: str
+
+
+class DebateResult(BaseModel):
+    """The outcome of a multi-agent debate."""
+    debate_id: str = ""
+    risk_id: str = ""
+    opinions: list[AgentOpinion] = Field(default_factory=list)
+    final_decision: str = ""
+    final_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    dissenting_agent: Optional[str] = None
+    financial_impact_usd: Optional[float] = None
+    generated_at: datetime = Field(default_factory=lambda: datetime.now())

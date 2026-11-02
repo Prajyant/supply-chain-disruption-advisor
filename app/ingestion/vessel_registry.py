@@ -105,7 +105,7 @@ class EquasisClient:
     """
 
     BASE_URL = "https://www.equasis.org"
-    LOGIN_URL = f"{BASE_URL}/EquasisWeb/authen/HomePage"
+    LOGIN_URL = f"{BASE_URL}/EquasisWeb/authen/HomePage?fs=HomePage"
     SEARCH_URL = f"{BASE_URL}/EquasisWeb/restricted/ShipHistory"
 
     def __init__(self) -> None:
@@ -126,23 +126,32 @@ class EquasisClient:
 
         self.session = requests.Session()
         self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (SupplyChainAdvisor/1.0)"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         })
 
         try:
+            # First visit the homepage to get initial cookies
+            self.session.get(
+                f"{self.BASE_URL}/EquasisWeb/public/HomePage",
+                timeout=15,
+            )
+
+            # Post login — Equasis uses j_email (not j_username)
             response = self.session.post(
                 self.LOGIN_URL,
                 data={
-                    "j_username": self.username,
+                    "j_email": self.username,
                     "j_password": self.password,
                     "submit": "Login",
                 },
                 timeout=15,
+                allow_redirects=True,
             )
-            if response.status_code == 200 and "JSESSIONID" in self.session.cookies.get_dict():
+            # Equasis may return 404 but still set JSESSIONID on successful login
+            if "JSESSIONID" in self.session.cookies.get_dict():
                 logger.info("Equasis login successful")
                 return True
-            logger.warning("Equasis login failed: status=%s", response.status_code)
+            logger.warning("Equasis login failed: no session cookie (status=%s)", response.status_code)
             return False
         except Exception as exc:
             logger.error("Equasis login error: %s", exc)
@@ -169,10 +178,11 @@ class EquasisClient:
             return None
 
         try:
-            response = self.session.get(
-                self.SEARCH_URL,
-                params={"IMO": imo_number},
-                timeout=15,
+            response = self.session.post(
+                f"{self.BASE_URL}/EquasisWeb/restricted/ShipInfo?fs=ShipInfo",
+                data={"P_IMO": imo_number},
+                timeout=20,
+                allow_redirects=True,
             )
             response.raise_for_status()
             self.cache.increment_daily_count()
@@ -194,6 +204,12 @@ class EquasisClient:
         """
         import re
 
+        # Strip HTML tags for easier text parsing
+        text = re.sub(r'<[^>]+>', ' ', html)
+        text = re.sub(r'&nbsp;', ' ', text)
+        text = re.sub(r'&deg;', '°', text)
+        text = re.sub(r'\s+', ' ', text)
+
         data: dict[str, Any] = {
             "imo_number": imo_number,
             "detentions_last_36_months": 0,
@@ -204,53 +220,69 @@ class EquasisClient:
             "ship_type": None,
             "gross_tonnage": None,
             "build_year": None,
-            "detention_details": [],
+            "vessel_name": None,
+            "mmsi": None,
+            "data_source": "equasis",
         }
 
-        # Extract detention count
-        detention_match = re.search(
-            r"Detentions?\s*(?:in last 36 months)?\s*:\s*(\d+)", html, re.IGNORECASE
-        )
-        if detention_match:
-            data["detentions_last_36_months"] = int(detention_match.group(1))
+        # Extract vessel name (appears as "VESSEL NAME - IMO n° XXXXXXX")
+        name_match = re.search(r'Ship\s*info\s+([A-Z][A-Z\s\d]+?)\s*-?\s*IMO', text)
+        if name_match:
+            data["vessel_name"] = name_match.group(1).strip()
 
-        # Extract inspection count
-        inspection_match = re.search(
-            r"Inspections?\s*(?:in last 36 months)?\s*:\s*(\d+)", html, re.IGNORECASE
-        )
-        if inspection_match:
-            data["inspections_last_36_months"] = int(inspection_match.group(1))
-
-        # Extract deficiency count
-        deficiency_match = re.search(
-            r"Deficienc(?:y|ies)\s*:\s*(\d+)", html, re.IGNORECASE
-        )
-        if deficiency_match:
-            data["deficiencies_last_36_months"] = int(deficiency_match.group(1))
-
-        # Extract classification society
-        class_match = re.search(
-            r"Classification\s*(?:Society)?\s*:\s*([^<\n]+)", html, re.IGNORECASE
-        )
-        if class_match:
-            data["classification_society"] = class_match.group(1).strip()
-
-        # Extract build year
-        year_match = re.search(r"Year\s*(?:of)?\s*Build\s*:\s*(\d{4})", html, re.IGNORECASE)
-        if year_match:
-            data["build_year"] = int(year_match.group(1))
-
-        # Extract flag
-        flag_match = re.search(r"Flag\s*:\s*([^<\n]+)", html, re.IGNORECASE)
+        # Extract flag (appears as "Flag (Country)")
+        flag_match = re.search(r'Flag\s*\(([^)]+)\)', text)
+        if not flag_match:
+            flag_match = re.search(r'Flag\s+([A-Za-z\s]+?)(?:\s+Call)', text)
         if flag_match:
             data["flag_state"] = flag_match.group(1).strip()
 
+        # Extract MMSI
+        mmsi_match = re.search(r'MMSI\s+(\d{9})', text)
+        if mmsi_match:
+            data["mmsi"] = mmsi_match.group(1)
+
         # Extract gross tonnage
-        gt_match = re.search(r"Gross\s*Tonnage\s*:\s*([\d,]+)", html, re.IGNORECASE)
+        gt_match = re.search(r'Gross\s*tonnage\s+([\d,]+)', text, re.IGNORECASE)
         if gt_match:
             data["gross_tonnage"] = int(gt_match.group(1).replace(",", ""))
 
-        return data
+        # Extract ship type
+        type_match = re.search(r'Type\s*of\s*ship\s+([A-Za-z\s/]+?)(?:\s*\d|\s*$|\s*Status)', text)
+        if type_match:
+            data["ship_type"] = type_match.group(1).strip()
+
+        # Extract build year (look for year in "since DD/MM/YYYY" or standalone 4-digit year near build/year)
+        year_match = re.search(r'(?:Year\s*of\s*[Bb]uild|[Bb]uilt)\s*:?\s*(\d{4})', text)
+        if not year_match:
+            # Try to find it from "since DD/MM/YYYY" near tonnage which gives commissioning year
+            year_match = re.search(r'since\s+\d{2}/\d{2}/(\d{4})', text)
+        if year_match:
+            data["build_year"] = int(year_match.group(1))
+
+        # Count detention mentions in the page
+        detention_section = re.findall(r'[Dd]etention', html)
+        data["detentions_last_36_months"] = max(0, len(detention_section) - 1)  # subtract header mentions
+
+        # Count inspection entries (look for PSC inspection rows)
+        inspection_rows = re.findall(r'(?:PSC|Port State|inspection)', html, re.IGNORECASE)
+        data["inspections_last_36_months"] = max(0, len(inspection_rows) // 2)
+
+        # Count deficiency mentions
+        deficiency_mentions = re.findall(r'[Dd]eficienc', html)
+        data["deficiencies_last_36_months"] = max(0, len(deficiency_mentions) - 1)
+
+        # Extract classification society
+        class_match = re.search(r'(?:Class(?:ification)?\s*(?:Society)?|[Cc]lass\s*:)\s*([A-Z][A-Za-z\s\']+?)(?:\s*\d|\s*$|\s*Type|\s*Flag)', text)
+        if class_match:
+            data["classification_society"] = class_match.group(1).strip()
+
+        # If we found at least the vessel name or flag, consider it a valid result
+        if data["vessel_name"] or data["flag_state"] or data["gross_tonnage"]:
+            return data
+
+        logger.warning("Equasis page for IMO %s didn't contain expected vessel data", imo_number)
+        return None
 
 
 class ITUMARSClient:

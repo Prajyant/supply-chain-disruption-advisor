@@ -755,11 +755,13 @@ function buildProcessorSteps(
     },
     {
       id: 'bedrock',
-      label: 'Bedrock',
+      label: 'AI Reasoning',
       detail: result
         ? result.result.reasoning_method.includes('fallback')
           ? `Fallback: ${result.result.reasoning_method}`
-          : `Claude Sonnet 4 · ${result.result.reasoning_method}`
+          : result.result.reasoning_method.includes('groq')
+            ? `Groq LLaMA 3.3 · ${result.result.reasoning_method}`
+            : `Claude Sonnet 4 · ${result.result.reasoning_method}`
         : 'Waiting for mitigation reasoning',
       status: status(Boolean(result)),
       icon: Bot,

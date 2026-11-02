@@ -179,8 +179,9 @@ export function VesselTracking() {
             style={{ background: '#0a0a1a' }}
           >
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; OpenStreetMap &copy; CARTO'
+              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              className="map-tiles-dark"
             />
 
             {/* Danger zone overlays */}

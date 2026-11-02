@@ -1,11 +1,11 @@
 shipment_id,supplier,origin,destination,route_nodes,imo_number,mmsi,vessel_name,vessel_latitude,vessel_longitude,vessel_status,vessel_speed_knots,vessel_course_degrees,vessel_progress_percent,material,quantity,lead_time_days,inventory_days_cover,supplier_delay_count,priority,declared_value_usd,departure_date,eta_date
 SHP-1001,Evergreen Marine,Shanghai,Rotterdam,Shanghai|Singapore|Suez Canal|Rotterdam,9811000,353136000,EVER GIVEN,28.94,49.23,UNDERWAY,13.4,287,62,electronics components,1200,22,4,1,3,350000,2026-04-28,2026-05-20
-SHP-1002,MSC Logistics,Shanghai,Rotterdam,Shanghai|Singapore|Suez Canal|Rotterdam,9703291,255806260,MSC OSCAR,14.5,52.3,UNDERWAY,12.4,310,31,PCB assemblies,3000,28,3,3,3,620000,2026-04-26,2026-05-24
+SHP-1002,MSC Logistics,Shanghai,Rotterdam,Shanghai|Singapore|Suez Canal|Rotterdam,9703291,255806260,MSC OSCAR,14.5,52.3,UNDERWAY,12.4,310,31,PCB assemblies,3000,28,18,3,3,620000,2026-04-26,2026-05-24
 SHP-1003,COSCO Shipping,Yantian,Mumbai,Yantian|Singapore|Sri Lanka|Mumbai,9795736,477339800,COSCO SHIPPING UNIVERSE,12.8,68.4,UNDERWAY,14.1,75,48,chemical feedstock,800,18,6,2,2,480000,2026-04-29,2026-05-17
-SHP-1004,Pacific Freight Partners,Busan,Los Angeles,Busan|Pacific Ocean|Los Angeles,9933004,636023002,EVER FORTUNE,35.2,142.6,UNDERWAY,17.6,82,44,mixed cargo,950,14,8,1,1,180000,2026-04-24,2026-05-08
+SHP-1004,Pacific Freight Partners,Busan,Los Angeles,Busan|Pacific Ocean|Los Angeles,9933004,636023002,EVER FORTUNE,35.2,142.6,UNDERWAY,17.6,82,44,mixed cargo,950,14,25,1,1,180000,2026-04-24,2026-05-08
 SHP-1005,Nova Plastics Inc,Shanghai,Rotterdam,Shanghai|Singapore|Suez Canal|Rotterdam,9933119,636022963,MAERSK SEALAND,51.9,3.8,UNDERWAY,14.0,250,85,polymer pellets,2000,10,2,4,3,275000,2026-04-29,2026-05-09
-SHP-1006,Meridian Chemicals,Ras Tanura,Hamburg,Ras Tanura|Hormuz|Suez Canal|Hamburg,9939137,636022889,GOLDEN STAR,22.9,69.7,UNDERWAY,11.6,210,32,crude oil derivatives,800,18,5,2,2,320000,2026-05-01,2026-05-19
-SHP-1007,Maersk Line,Shanghai,Rotterdam,Shanghai|Singapore|Suez Canal|Rotterdam,9732319,636018505,MADRID MAERSK,6.2,80.5,UNDERWAY,19.2,295,38,auto parts,1500,24,5,0,2,420000,2026-04-30,2026-05-24
+SHP-1006,Meridian Chemicals,Ras Tanura,Hamburg,Ras Tanura|Hormuz|Suez Canal|Hamburg,9939137,636022889,GOLDEN STAR,22.9,69.7,UNDERWAY,11.6,210,32,crude oil derivatives,800,18,14,2,2,320000,2026-05-01,2026-05-19
+SHP-1007,Maersk Line,Shanghai,Rotterdam,Shanghai|Singapore|Suez Canal|Rotterdam,9732319,636018505,MADRID MAERSK,6.2,80.5,UNDERWAY,19.2,295,38,auto parts,1500,24,22,0,2,420000,2026-04-30,2026-05-24
 SHP-1008,OOCL Transport,Busan,Los Angeles,Busan|Pacific Ocean|Los Angeles,9619907,477588600,OOCL HONG KONG,28.5,-155.3,UNDERWAY,21.4,68,72,consumer electronics,2200,16,3,1,3,780000,2026-04-22,2026-05-08
 SHP-1009,HMM Global,Busan,Los Angeles,Busan|Pacific Ocean|Los Angeles,9863297,440326000,HMM ALGECIRAS,32.2,-128.0,UNDERWAY,18.8,85,65,semiconductors,600,18,2,2,3,950000,2026-04-28,2026-05-16
-SHP-1010,MOL Shipping,Shanghai,Rotterdam,Shanghai|Singapore|Suez Canal|Rotterdam,9708837,636092799,MOL TRIUMPH,5.8,103.2,UNDERWAY,20.1,270,35,industrial machinery,900,26,4,1,2,560000,2026-04-27,2026-05-23
+SHP-1010,MOL Shipping,Shanghai,Rotterdam,Shanghai|Singapore|Suez Canal|Rotterdam,9708837,636092799,MOL TRIUMPH,5.8,103.2,UNDERWAY,20.1,270,35,industrial machinery,900,26,16,1,2,560000,2026-04-27,2026-05-23

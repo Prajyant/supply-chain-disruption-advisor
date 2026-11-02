@@ -88,6 +88,14 @@ class IngestionWorker(BackgroundWorker):
 
             logger.info(f"Ingestion complete: {result}")
 
+            # Set up chat service with the new vector index
+            index = self.ingestion_service.get_index()
+            if index:
+                from app.services.chat_service import ChatService
+                chat_service = ChatService()
+                chat_service.set_index(index)
+                logger.info("Chat vector index updated with %d chunks", index.chunk_count)
+
             # Populate the ShipmentTracker from email events
             events = result.get("events", [])
             email_events = [

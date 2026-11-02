@@ -6,7 +6,7 @@ import {
   MapPin, ArrowUpRight, ArrowDownRight,
   Shield, Truck,
 } from 'lucide-react';
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Component, ErrorInfo, ReactNode } from 'react';
 import { useViewMode } from '../context/ViewModeContext';
 
 // ==================== Error Boundary ====================

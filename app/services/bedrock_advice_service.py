@@ -262,41 +262,86 @@ class BedrockAdviceService:
 
 
 def build_advice_prompt(
-    shipment: ShipmentInput,
+    shipment,
     score_result: dict[str, Any],
     question: str | None,
 ) -> str:
-    """Build a compact JSON prompt for Bedrock-owned reasoning only."""
+    """Build a compact JSON prompt for LLM-owned reasoning only."""
     evidence_events = score_result.get("evidence_events", [])[:4]
+    features = score_result.get("features", {})
 
-    return f"""You are a supply chain risk analyst.
+    # shipment may be a dict (from compact_shipment_for_prompt) or a ShipmentInput
+    s = shipment if isinstance(shipment, dict) else (shipment.model_dump() if hasattr(shipment, 'model_dump') else dict(shipment))
 
-Use the quantitative score exactly as provided. Do not invent a different score.
-Explain the score and produce actionable mitigation for logistics/procurement.
-Treat weather, marine weather, trade, and news as supporting context. They may
-amplify risk when shipment fundamentals are already weak, but they must not be
-presented as the only reason for a high-risk decision.
+    # Build a concise feature summary highlighting what's actually driving risk
+    feature_drivers = []
+    inv_days = s.get("inventory_days_cover", 0)
+    lead_days = s.get("lead_time_days", 0)
+    delay_cnt = s.get("supplier_delay_count", 0)
+    vessel_name = s.get("vessel_name", "")
+    vessel_status = s.get("vessel_status", "")
+    material = s.get("material", "cargo")
+    origin = s.get("origin", "")
+    destination = s.get("destination", "")
+    supplier = s.get("supplier", "")
+    eta_date = s.get("eta_date", "")
+    priority = s.get("priority", "")
+    declared_value = s.get("declared_value_usd", 0)
 
-Advice target:
-- Write recommendations for the buyer/procurement control tower to send to the
-  supplier, carrier, forwarder, plant, or compliance team.
-- Each recommended action must start with an owner tag: [Supplier], [Carrier],
-  [Forwarder], [Procurement], [Plant], [Inventory], or [Compliance].
-- Each action must include a concrete request, a timing expectation, and a
-  decision trigger where appropriate. Example: "[Carrier] Confirm revised ETD,
-  next port call, and ETA within 2 hours; escalate if the ETA moves by more
-  than 24 hours."
-- Prefer shipment-specific actions over generic monitoring. Mention the actual
-  material, vessel/flight, route node, ETA, inventory cover, or supplier name.
+    if features.get("inventory_pressure", 0) >= 7:
+        feature_drivers.append(f"inventory critically low at {inv_days} days cover")
+    elif features.get("inventory_pressure", 0) >= 4:
+        feature_drivers.append(f"inventory moderately tight at {inv_days} days cover")
+    if features.get("priority_score", 0) >= 6:
+        feature_drivers.append(f"high buyer priority ({priority})")
+    if features.get("lead_time_days", 0) >= 20:
+        feature_drivers.append(f"extended lead time of {lead_days} days")
+    elif features.get("lead_time_days", 0) >= 14:
+        feature_drivers.append(f"moderate lead time of {lead_days} days")
+    if features.get("supplier_delay_count", 0) >= 3:
+        feature_drivers.append(f"supplier has {delay_cnt} previous delays (unreliable)")
+    elif features.get("supplier_delay_count", 0) > 0:
+        feature_drivers.append(f"supplier has {delay_cnt} prior delay(s)")
+    if features.get("vessel_status_score", 0) >= 5:
+        feature_drivers.append(f"vessel {vessel_name} status is concerning ({vessel_status})")
+    elif features.get("vessel_status_score", 0) > 0:
+        feature_drivers.append(f"vessel {vessel_name} is {vessel_status}")
+    if features.get("declared_value_score", 0) >= 6:
+        feature_drivers.append(f"high-value cargo (${declared_value:,.0f})")
+    if features.get("max_external_severity", 0) >= 7:
+        feature_drivers.append("significant external disruption signals detected")
 
-Supply Chain Risk Context:
-- News events are risky because they can cause port closures, route diversions, customs delays, labor strikes, and geopolitical disruptions that directly impact transit times and delivery reliability.
-- Weather events affect supply chains by causing vessel delays, port congestion, route changes, and safety-related stoppages that extend lead times unpredictably.
-- Trade policy changes (tariffs, sanctions, embargoes) create customs delays, documentation requirements, and cost increases that can halt shipments at borders.
-- These external factors compound existing shipment pressures like low inventory, long lead times, and supplier delays, turning manageable risks into critical disruptions.
+    driver_summary = "; ".join(feature_drivers) if feature_drivers else "no dominant single driver — composite risk from multiple moderate factors"
+
+    return f"""You are a senior supply chain risk analyst at a global procurement control tower.
+
+TASK: Analyze the shipment risk score and produce a differentiated, actionable recommendation.
+The score is already computed — do NOT recalculate it. Your job is to EXPLAIN it and recommend ACTIONS.
+
+KEY RISK DRIVERS FOR THIS SHIPMENT:
+{driver_summary}
+
+RULES FOR RECOMMENDATIONS:
+1. Each action MUST be unique to this shipment's situation. Never repeat the same action across shipments.
+2. Reference specific details: the material ({material}), vessel ({vessel_name or 'N/A'}), 
+   route ({origin} → {destination}), supplier ({supplier}), and ETA ({eta_date}).
+3. Each action starts with an owner tag: [Supplier], [Carrier], [Forwarder], [Procurement], [Plant], [Inventory], or [Compliance].
+4. Each action must specify: WHO does it, WHAT exactly they do, WHEN (deadline), and WHAT TRIGGERS escalation.
+5. DO NOT use generic phrases like "monitor the situation" or "keep options ready."
+   Instead: specify what to monitor, what threshold triggers action, and what the fallback is.
+6. For low/medium risk: focus on preventive positioning, not panic measures.
+   For high risk: focus on parallel-path contingencies (backup supplier quotes, alternate routing).
+   For critical risk: focus on immediate execution — approvals, expedited shipments, production line protection.
+
+REASON WRITING RULES:
+- The "reason" field must be a natural-language narrative (2-3 sentences max).
+- Lead with the PRIMARY driver, then mention secondary factors.
+- Do NOT just list features. Explain the BUSINESS IMPACT: what could go wrong and by when.
+- Example good reason: "The {lead_days}-day lead time combined with only {inv_days} days of inventory cover means production could halt if any delay occurs. The vessel's current position suggests it may not arrive before the buffer runs out."
+- Example bad reason: "Shipment is rated high due to lead time, priority, and vessel status." (too generic)
 
 Shipment:
-{json.dumps(compact_shipment_for_prompt(shipment), indent=2)}
+{json.dumps(s, indent=2)}
 
 Quantitative score result:
 {json.dumps(score_result, indent=2)}
@@ -309,33 +354,24 @@ Evidence events that contributed to the risk score:
 
 Return ONLY one compact valid JSON object with exactly these keys:
 - "decision": string, one of: "proceed", "monitor", "mitigate", "hold_or_escalate"
-- "reason": string, 1-3 concise sentences
-- "recommended_actions": array of 3-5 specific actions
+- "reason": string, 2-3 concise sentences explaining the business impact (not just listing features)
+- "recommended_actions": array of 3-5 specific, unique actions (each with owner tag, concrete task, deadline, and trigger)
 - "confidence_score": integer 0-100
 - "escalation_required": boolean
-- "reasoning_method": short string such as "bedrock_analyst_review"
-- "event_explanations": array of objects, one for each evidence event that contributed to the risk score. Each object must have:
-  - "event_title": string, the title of the event
-  - "event_source": string, the source of the event
-  - "event_severity": string, the severity level
-  - "risk_impact": string, 1-2 sentences explaining why this event is generally risky for supply chains
-  - "shipment_connection": string, how it specifically affects this shipment's route, material, or timing
+- "reasoning_method": "groq_analyst_review"
+- "event_explanations": array of objects for each evidence event. Each object must have:
+  - "event_title": string
+  - "event_source": string
+  - "event_severity": string
+  - "risk_impact": string, 1-2 sentences on general supply chain risk
+  - "shipment_connection": string, specific connection to THIS shipment's route/material/timing
 
 Guardrails:
-- risk_score must equal the provided score.
-- risk_level must match the provided level.
-- Do not include shipment_id, risk_score, risk_level, scoring_method, model_version,
-  signals, features, evidence_events, or context_events. The server injects those.
-- Keep the whole response under 1200 words.
-- Use actions that are operationally specific, not generic.
-- Every recommended action must have an owner tag and a concrete artifact or
-  next step, such as revised ETA, recovery plan, customs document pack, partial
-  expedite quote, alternate port plan, or stock allocation decision.
-- Explain shipment-owned drivers first: inventory cover, priority, lead time, supplier history, vessel status, and value.
-- Mention weather/news/trade only when the score result contains matching non-zero features or evidence events.
+- Do NOT include shipment_id, risk_score, risk_level, scoring_method, model_version, signals, features, evidence_events, or context_events.
+- Keep the response under 1000 words.
 - If risk_level is high or critical, escalation_required must be true.
-- For event_explanations, only explain events that are in the evidence_events list and actually contributed to the risk score.
-- No markdown, no code fences, no extra text."""
+- For event_explanations, only explain events in the evidence_events list.
+- No markdown, no code fences, no extra text outside the JSON."""
 
 
 def compact_score_result_for_prompt(score_result: dict[str, Any]) -> dict[str, Any]:
@@ -505,29 +541,80 @@ def fallback_reason(
     score: float,
     signals: list[str],
 ) -> str:
-    """Build a concise, shipment-specific explanation when Bedrock is unavailable."""
+    """Build a concise, shipment-specific narrative when the LLM is unavailable."""
     features = score_result.get("features", {})
-    drivers = []
-    if features.get("inventory_pressure", 0) >= 7:
-        drivers.append(f"low inventory cover of {shipment.inventory_days_cover} days")
-    if features.get("priority_score", 0) >= 6:
-        drivers.append(f"{shipment.priority} buyer priority")
-    if features.get("lead_time_days", 0) >= 14:
-        drivers.append(f"{shipment.lead_time_days}-day lead time")
-    if features.get("supplier_delay_count", 0) > 0:
-        drivers.append(f"{shipment.supplier_delay_count} previous supplier delay signals")
-    if features.get("vessel_status_score", 0) > 0:
-        drivers.append("live vessel telemetry on the route")
+    evidence_events = score_result.get("evidence_events", [])
 
-    driver_text = ", ".join(drivers[:4]) if drivers else "shipment fundamentals and live route context"
-    external_text = " External weather/news/trade was checked but did not materially change the score."
+    # Identify the primary driver (highest-contributing feature)
+    primary = ""
+    secondary = ""
+
+    inv_pressure = features.get("inventory_pressure", 0)
+    priority_score = features.get("priority_score", 0)
+    lead_time = features.get("lead_time_days", 0)
+    delay_count = features.get("supplier_delay_count", 0)
+    vessel_score = features.get("vessel_status_score", 0)
+    value_score = features.get("declared_value_score", 0)
+    external_sev = features.get("max_external_severity", 0)
+
+    # Build narrative based on dominant risk factor
+    if inv_pressure >= 8:
+        primary = (
+            f"The shipment has a critical risk level due to only {shipment.inventory_days_cover} days of inventory cover remaining. "
+            f"If {shipment.vessel_name or 'the vessel'} experiences any delay on the {shipment.origin}–{shipment.destination} route, "
+            f"production lines depending on {shipment.material} could face a stockout."
+        )
+    elif external_sev >= 7 and evidence_events:
+        event_title = evidence_events[0].get("title", evidence_events[0].get("text", ""))[:80]
+        primary = (
+            f"External intelligence signals indicate significant disruption risk along the route. "
+            f"The matched event \"{event_title}\" could impact transit times or port operations "
+            f"for this {shipment.material} shipment from {shipment.origin} to {shipment.destination}."
+        )
+    elif delay_count >= 3:
+        primary = (
+            f"Supplier {shipment.supplier} has a history of {shipment.supplier_delay_count} delivery delays, "
+            f"making this {shipment.material} shipment unreliable. Combined with a {shipment.lead_time_days}-day lead time, "
+            f"any additional slip could cascade into downstream production issues."
+        )
+    elif lead_time >= 20 and priority_score >= 6:
+        primary = (
+            f"The combination of a {shipment.lead_time_days}-day lead time and high buyer priority "
+            f"creates vulnerability — there is limited time to react if {shipment.vessel_name or 'the vessel'} "
+            f"encounters delays en route to {shipment.destination}."
+        )
+    elif vessel_score >= 5:
+        vessel_name = shipment.vessel_name or "The vessel"
+        primary = (
+            f"{vessel_name}'s current status ({shipment.vessel_status}) and the ETA uncertainty "
+            f"add risk to this {shipment.material} shipment. The declared value of ${shipment.declared_value_usd:,.0f} "
+            f"increases the financial exposure if delivery is delayed."
+        )
+    elif value_score >= 6 and priority_score >= 6:
+        primary = (
+            f"This is a high-value shipment (${shipment.declared_value_usd:,.0f}) with elevated buyer priority, "
+            f"making it sensitive to any transit disruption on the {shipment.origin}–{shipment.destination} corridor."
+        )
+    else:
+        primary = (
+            f"The shipment {shipment.shipment_id} from {shipment.origin} to {shipment.destination} "
+            f"carries composite risk from multiple moderate factors including "
+            f"{shipment.lead_time_days}-day lead time and {shipment.inventory_days_cover} days of stock cover."
+        )
+
+    # Add signal context if available
     if signals:
-        external_text = f" Matched live signal: {signals[0]}."
+        signal_text = signals[0]
+        if "weather" in signal_text.lower():
+            secondary = f" Weather conditions along the route are being monitored as a potential amplifier."
+        elif "trade" in signal_text.lower() or "tariff" in signal_text.lower():
+            secondary = f" Trade policy developments may introduce customs or documentation delays."
+        elif "vessel" in signal_text.lower():
+            secondary = f" Live vessel tracking data confirms the current position and status."
+        else:
+            secondary = f" Live intelligence signal detected: {signal_text[:60]}."
 
-    return (
-        f"Shipment {shipment.shipment_id} from {shipment.origin} to {shipment.destination} is rated {level} "
-        f"at {score:.2f}/10 because of {driver_text}.{external_text}"
-    )
+    return primary + secondary
 
 
 def fallback_actions(
@@ -536,65 +623,137 @@ def fallback_actions(
     shipment: ShipmentInput | None = None,
     score_result: dict[str, Any] | None = None,
 ) -> list[str]:
-    """Deterministic actions when Bedrock is unavailable or invalid."""
+    """Deterministic but shipment-specific actions when the LLM is unavailable."""
     features = (score_result or {}).get("features", {})
     context_events = (score_result or {}).get("context_events", [])
     evidence_events = (score_result or {}).get("evidence_events", [])
     actions: list[str] = []
 
-    if shipment and features.get("inventory_pressure", 0) >= 6:
-        actions.append(
-            f"[Plant] Confirm exact RM stock cover for {shipment.material} within 2 hours and freeze non-critical consumption until the ETA is confirmed."
-        )
-    if shipment and features.get("priority_score", 0) >= 6:
-        actions.append(
-            f"[Procurement] Prepare an expedited split-shipment quote for the highest-priority quantity of {shipment.material}; trigger it if ETA slips by more than 24 hours."
-        )
-    if shipment and features.get("supplier_delay_count", 0) > 0:
-        actions.append(
-            f"[Supplier] Send a written recovery plan from {shipment.supplier} today, including backup dispatch date, alternate carrier, and escalation contact."
-        )
-    if shipment and shipment.transport_mode.lower().strip() == "sea":
-        actions.append(
-            f"[Carrier] Confirm live vessel position, next port call, port status, and revised ETA for {shipment.vessel_name or shipment.imo_number or shipment.shipment_id} within 2 hours."
-        )
-    if any("weather" in str(event.get("source", "")).lower() or "marine" in str(event.get("source", "")).lower() for event in evidence_events):
-        actions.append("[Forwarder] Provide alternate port, transshipment, or holding-plan options because route-matched weather is affecting the risk score.")
-    elif any("weather" in str(event.get("source", "")).lower() or "marine" in str(event.get("source", "")).lower() for event in context_events):
-        actions.append("[Forwarder] Keep live weather and marine alerts on watch; propose reroute only if the alert becomes route-matched or carrier revises ETA.")
-    if any("trade" in str(event.get("source", "")).lower() or "news" in str(event.get("source", "")).lower() for event in evidence_events):
-        actions.append("[Compliance] Verify customs documents, tariff exposure, and restricted-party checks before the shipment reaches the next border or port.")
-    elif any("trade" in str(event.get("source", "")).lower() or "news" in str(event.get("source", "")).lower() for event in context_events):
-        actions.append("[Compliance] Review World Monitor headlines for customs or trade-policy relevance; act only if they match the route or material.")
+    if not shipment:
+        return [
+            "[Procurement] Review shipment risk score and determine next steps.",
+            "[Carrier] Confirm current shipment status and ETA.",
+            "[Inventory] Verify stock levels against expected delivery date.",
+        ]
 
-    if len(actions) >= 3:
-        return actions[:5]
+    vessel_ref = shipment.vessel_name or shipment.imo_number or "the carrier"
+    material = shipment.material or "the cargo"
+    eta = shipment.eta_date or "the scheduled ETA"
 
-    if level == "critical":
-        actions.extend([
-            "[Procurement] Escalate to logistics leadership immediately with risk score, ETA, and inventory-cover impact.",
-            "[Supplier] Check alternate supplier or route availability before dispatch.",
-            "[Inventory] Increase buffer stock or allocate available stock to dependent production lines.",
-            "[Carrier] Send shipment status confirmation within 24 hours.",
-        ])
-    if level == "high":
-        actions.extend([
-            "[Carrier] Confirm schedule and route exposure before shipment release.",
-            "[Procurement] Prepare alternate routing or backup supplier options.",
-            "[Forwarder] Increase monitoring cadence until the shipment clears the risky node.",
-        ])
-    if level == "medium":
-        actions.extend([
-            "[Forwarder] Monitor route conditions daily until delivery.",
-            "[Inventory] Confirm inventory cover against expected arrival date.",
-            "[Procurement] Keep a backup logistics option ready if signals worsen.",
-        ])
-    if not actions:
-        actions.extend([
-            "[Procurement] Proceed with the current shipment plan.",
-            "[Supplier] Continue normal supplier and carrier monitoring.",
-            "[Procurement] Re-score if weather, trade, or supplier signals change.",
-        ])
+    # Inventory-driven actions
+    if features.get("inventory_pressure", 0) >= 8:
+        actions.append(
+            f"[Plant] Immediately audit {material} stock on hand and freeze allocation to non-critical production lines. "
+            f"Report exact days-of-supply to procurement within 1 hour."
+        )
+    elif features.get("inventory_pressure", 0) >= 5:
+        actions.append(
+            f"[Inventory] Cross-check {material} consumption rate against {eta} arrival. "
+            f"Flag to procurement if buffer drops below 3 days before delivery."
+        )
+
+    # Supplier reliability actions
+    if features.get("supplier_delay_count", 0) >= 3:
+        actions.append(
+            f"[Procurement] Activate secondary supplier qualification for {material}. "
+            f"Request spot-buy quote from backup vendor within 4 hours as insurance against {shipment.supplier}'s delay pattern."
+        )
+    elif features.get("supplier_delay_count", 0) > 0:
+        actions.append(
+            f"[Supplier] Request written confirmation from {shipment.supplier} that shipment {shipment.shipment_id} "
+            f"is on track for {eta}. Include backup dispatch date if current schedule slips."
+        )
+
+    # Vessel/carrier-specific actions
+    if shipment.transport_mode.lower().strip() == "sea":
+        if features.get("vessel_status_score", 0) >= 5:
+            actions.append(
+                f"[Carrier] Escalate: {vessel_ref} status is {shipment.vessel_status}. "
+                f"Demand revised ETA, next port call, and reason for status within 2 hours. "
+                f"If no response, activate alternate carrier contingency."
+            )
+        else:
+            actions.append(
+                f"[Carrier] Confirm {vessel_ref} position and schedule adherence for the "
+                f"{shipment.origin}→{shipment.destination} leg. Report any port congestion or deviation from route."
+            )
+
+    # Priority-based actions
+    if features.get("priority_score", 0) >= 8:
+        actions.append(
+            f"[Procurement] This is a top-priority shipment. Pre-authorize expedited air freight for {material} "
+            f"(up to ${min(shipment.declared_value_usd * 0.15, 50000):,.0f}) as a standby option. "
+            f"Trigger if ETA slips more than 48 hours past {eta}."
+        )
+    elif features.get("priority_score", 0) >= 6 and features.get("lead_time_days", 0) >= 18:
+        actions.append(
+            f"[Procurement] Prepare split-shipment contingency: identify which portion of the {shipment.quantity} units "
+            f"of {material} is most urgent. Have an expedited partial-ship quote ready within 24 hours."
+        )
+
+    # External event-driven actions
+    weather_events = [e for e in evidence_events if "weather" in str(e.get("source", "")).lower() or "marine" in str(e.get("source", "")).lower()]
+    trade_events = [e for e in evidence_events if "trade" in str(e.get("source", "")).lower()]
+    news_events = [e for e in evidence_events if "news" in str(e.get("source", "")).lower()]
+
+    if weather_events:
+        location = weather_events[0].get("metadata", {}).get("location", "the route") if isinstance(weather_events[0].get("metadata"), dict) else "the route"
+        actions.append(
+            f"[Forwarder] Weather disruption detected near {location}. Provide alternate routing options "
+            f"(port swap or transshipment) within 4 hours. Include cost delta and time impact for each option."
+        )
+    elif trade_events:
+        actions.append(
+            f"[Compliance] Trade policy alert on the {shipment.origin}→{shipment.destination} corridor. "
+            f"Verify all customs documentation, HS codes, and certificates of origin are current. "
+            f"Confirm no new tariff surcharges apply to {material} before the shipment clears customs."
+        )
+    elif news_events:
+        event_title = news_events[0].get("title", "")[:60] or "geopolitical development"
+        actions.append(
+            f"[Compliance] Monitor impact of \"{event_title}\" on this route. "
+            f"Prepare contingency customs documentation and verify restricted-party screening is current."
+        )
+    elif any("weather" in str(e.get("source", "")).lower() for e in context_events):
+        actions.append(
+            f"[Forwarder] Weather activity detected in the region. Monitor for route-matched alerts "
+            f"and have a port-diversion plan ready for {vessel_ref} if conditions deteriorate."
+        )
+
+    # Value protection for high-value cargo
+    if features.get("declared_value_score", 0) >= 7 and level in {"high", "critical"}:
+        actions.append(
+            f"[Procurement] High-value cargo (${shipment.declared_value_usd:,.0f}) at elevated risk. "
+            f"Verify marine cargo insurance coverage and notify underwriter of potential delay claim. "
+            f"Daily cost of capital at risk: ~${shipment.declared_value_usd * 0.0003:,.0f}/day."
+        )
+
+    # Ensure minimum action count with level-appropriate defaults
+    if len(actions) < 3:
+        if level == "critical":
+            if not any("[Procurement]" in a and "escalat" in a.lower() for a in actions):
+                actions.append(
+                    f"[Procurement] Escalate to supply chain leadership with a 1-page brief: "
+                    f"risk score {score_result.get('risk_score', 'N/A')}/10, {material} ETA {eta}, "
+                    f"and recommended contingency spend. Get approval within 4 hours."
+                )
+        elif level == "high":
+            if not any("[Procurement]" in a and "alternate" in a.lower() for a in actions):
+                actions.append(
+                    f"[Procurement] Identify alternate sourcing or routing for {material} as a precaution. "
+                    f"Have a Plan B quote ready within 24 hours in case primary path fails."
+                )
+        elif level == "medium":
+            actions.append(
+                f"[Procurement] Set a calendar reminder to re-score {shipment.shipment_id} in 48 hours. "
+                f"If score increases above 7.0, trigger the high-risk playbook for {material}."
+            )
+        else:
+            actions.append(
+                f"[Procurement] No immediate action required. Continue standard tracking for {shipment.shipment_id} "
+                f"and re-evaluate if external signals change."
+            )
+
     return actions[:5]
 
 
