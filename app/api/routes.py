@@ -543,7 +543,10 @@ def run_strands_shipment_risk_agent(
     strands_orchestrator_service: StrandsOrchestratorService = Depends(get_strands_orchestrator_service)
 ) -> StrandsShipmentRiskResponse:
     """Run the Strands-orchestrated shipment risk workflow."""
-    return strands_orchestrator_service.run_shipment_risk_workflow(req)
+    result = strands_orchestrator_service.run_shipment_risk_workflow(req)
+    if req.shipment and req.shipment.shipment_id:
+        _shipment_analysis_cache[req.shipment.shipment_id] = result.model_dump()
+    return result
 
 
 @router.get("/agents/strands/status")
@@ -726,11 +729,17 @@ def get_node_context(
 
 @router.get("/shipments")
 def get_shipments(advisor_service: AdvisorService = Depends(get_advisor_service)) -> list[dict]:
-    """Get all tracked shipments.
-
-    Returns:
-        List of shipment dictionaries
-    """
+    """Get all tracked shipments dynamically derived in real-time from the active AIS fleet."""
+    try:
+        from app.ingestion.ais.vessel_worker import get_vessel_worker
+        worker = get_vessel_worker()
+        if not worker.engine:
+            worker.initialize()
+        realtime = worker.engine.get_realtime_shipments()
+        if realtime:
+            return realtime
+    except Exception as e:
+        logger.warning(f"Could not load realtime shipments from AIS engine: {e}")
     return advisor_service.get_shipments()
 
 
@@ -838,9 +847,18 @@ async def get_risk_summary() -> dict:
     """Get aggregate risk metrics from all analyzed shipments.
 
     Returns counts by risk level, average score, and top risks.
-    Uses the preloaded analysis cache.
+    Pulls dynamically across all active real-time tracked fleet shipments.
     """
-    if not _shipment_analysis_cache:
+    from app.ingestion.ais.vessel_worker import get_vessel_worker
+    try:
+        worker = get_vessel_worker()
+        if not worker.engine:
+            worker.initialize()
+        realtime_shipments = worker.engine.get_realtime_shipments()
+    except Exception:
+        realtime_shipments = []
+
+    if not realtime_shipments and not _shipment_analysis_cache:
         return {
             "total_analyzed": 0,
             "critical": 0,
@@ -858,12 +876,45 @@ async def get_risk_summary() -> dict:
     total_score = 0.0
     top_risks = []
 
-    for shipment_id, analysis in _shipment_analysis_cache.items():
-        result = analysis.get("result", {})
-        risk_level = result.get("risk_level", "low").lower()
-        risk_score = result.get("risk_score", 0.0)
-        total_score += risk_score
+    # Map shipments by ID
+    shipment_map = {s["shipment_id"]: s for s in realtime_shipments}
 
+    # Evaluate all active shipments
+    all_ids = set(shipment_map.keys()) | set(_shipment_analysis_cache.keys())
+
+    for shipment_id in all_ids:
+        shipment = shipment_map.get(shipment_id)
+        analysis = _shipment_analysis_cache.get(shipment_id)
+
+        if analysis and "result" in analysis:
+            result = analysis["result"]
+            risk_level = str(result.get("risk_level", "medium")).lower()
+            risk_score = float(result.get("risk_score", 5.0))
+            supplier = result.get("supplier") or (shipment.get("supplier") if shipment else shipment_id)
+        elif shipment:
+            # Instant live AIS risk calculation
+            v_status = str(shipment.get("vessel_status", "")).lower()
+            inv_cover = float(shipment.get("inventory_days_cover") or 10)
+            in_danger = v_status in ("danger", "silent") or any(
+                z in str(shipment.get("route_nodes", [])) for z in ("Suez Canal", "Bab-el-Mandeb", "Hormuz")
+            )
+            if in_danger:
+                risk_level = "critical"
+                risk_score = 8.5
+            elif v_status == "stale" or inv_cover <= 4:
+                risk_level = "high"
+                risk_score = 6.8
+            elif inv_cover <= 10:
+                risk_level = "medium"
+                risk_score = 4.8
+            else:
+                risk_level = "low"
+                risk_score = 2.2
+            supplier = shipment.get("supplier", shipment_id)
+        else:
+            continue
+
+        total_score += risk_score
         if risk_level == "critical":
             critical += 1
         elif risk_level == "high":
@@ -877,13 +928,13 @@ async def get_risk_summary() -> dict:
             "shipment_id": shipment_id,
             "risk_level": risk_level,
             "risk_score": risk_score,
-            "supplier": result.get("shipment_id", shipment_id),
+            "supplier": supplier,
         })
 
     # Sort by risk score descending
     top_risks.sort(key=lambda x: x["risk_score"], reverse=True)
 
-    total = len(_shipment_analysis_cache)
+    total = len(top_risks)
     return {
         "total_analyzed": total,
         "critical": critical,

@@ -23,7 +23,7 @@ export function WeatherOverlay({ points }: WeatherOverlayProps) {
   return (
     <>
       {data
-        .filter((point) => point.severity !== 'low')
+        .filter((point) => point && point.severity !== 'low' && Number.isFinite(point.latitude) && Number.isFinite(point.longitude))
         .map((point, index) => {
           const { emoji } = getWeatherIcon(point.weather_code);
           const bgColor = getSeverityColor(point.severity);

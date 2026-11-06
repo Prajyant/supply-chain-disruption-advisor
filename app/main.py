@@ -1,4 +1,5 @@
 """Main FastAPI application for Supply Chain Disruption Advisor."""
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ load_dotenv()
 
 from app.api.routes import router
 from app.api.vessel_routes import vessel_router
+from app.api.intelligence_routes import intelligence_router
 from app.background.workers import WorkerManager, IngestionWorker, RiskWorker, PropagationWorker
 from app.ingestion.ais.vessel_worker import get_vessel_worker
 
@@ -51,7 +53,7 @@ async def lifespan(app: FastAPI):
     ingestion_worker = worker_manager.workers.get("ingestion")
     if ingestion_worker:
         try:
-            await ingestion_worker.run()
+            asyncio.create_task(ingestion_worker.run())
             logger.info("Initial data ingestion complete — chat advisor ready")
         except Exception as exc:
             logger.warning("Initial ingestion failed (will retry on schedule): %s", exc)
@@ -95,6 +97,7 @@ app.add_middleware(
 # vessel_router first so /vessels/watchlist, /vessels/search etc. match before
 # the catch-all /vessels/{imo_number} in the main router
 app.include_router(vessel_router)
+app.include_router(intelligence_router)
 app.include_router(router)
 
 

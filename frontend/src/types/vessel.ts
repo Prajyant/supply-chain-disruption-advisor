@@ -83,6 +83,8 @@ export interface FleetSummary {
 export interface VesselWatchlistResponse {
   fleet_summary: FleetSummary;
   vessels: VesselStatus[];
+  provider?: string;
+  is_live?: boolean;
 }
 
 export interface VesselSearchResult {

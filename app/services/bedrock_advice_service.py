@@ -558,7 +558,13 @@ def fallback_reason(
     external_sev = features.get("max_external_severity", 0)
 
     # Build narrative based on dominant risk factor
-    if inv_pressure >= 8:
+    if level == "low" or score <= 3.5:
+        primary = (
+            f"Shipment {shipment.shipment_id} on route {shipment.origin}–{shipment.destination} is operating within normal parameters. "
+            f"Vessel {shipment.vessel_name or 'the carrier'} maintains a healthy {shipment.inventory_days_cover} days of inventory buffer "
+            f"with no active transit impediments."
+        )
+    elif inv_pressure >= 8:
         primary = (
             f"The shipment has a critical risk level due to only {shipment.inventory_days_cover} days of inventory cover remaining. "
             f"If {shipment.vessel_name or 'the vessel'} experiences any delay on the {shipment.origin}–{shipment.destination} route, "
@@ -639,6 +645,13 @@ def fallback_actions(
     vessel_ref = shipment.vessel_name or shipment.imo_number or "the carrier"
     material = shipment.material or "the cargo"
     eta = shipment.eta_date or "the scheduled ETA"
+
+    if level == "low":
+        return [
+            f"[Carrier] Monitor {vessel_ref} AIS progress on the {shipment.origin}→{shipment.destination} leg; confirm estimated arrival for {eta}.",
+            f"[Inventory] Verify destination receiving bay readiness for scheduled delivery of {material}.",
+            f"[Procurement] Maintain regular cadence with {shipment.supplier}; standard operational monitoring active.",
+        ]
 
     # Inventory-driven actions
     if features.get("inventory_pressure", 0) >= 8:

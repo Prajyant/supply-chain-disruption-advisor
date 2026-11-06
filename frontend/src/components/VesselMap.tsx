@@ -1,9 +1,12 @@
-import { MapContainer, Marker, Popup, TileLayer, CircleMarker } from 'react-leaflet';
+import { useEffect } from 'react';
+import { MapContainer, Marker, Popup, TileLayer, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { RouteLines } from './RouteLines';
-import { FitViewport } from './FitViewport';
+import { useQuery } from '@tanstack/react-query';
+import { DangerZoneOverlay } from './DangerZoneOverlay';
 import { WeatherOverlay } from './WeatherOverlay';
+import { fetchVesselTrack, fetchDangerZones } from '../services/vesselApi';
+import { useVesselStore } from '../store/vesselStore';
 
 // Fix for default marker icons in Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -13,7 +16,10 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-// Common port coordinates
+const CARTO_API_KEY = import.meta.env.VITE_CARTO_API_KEY || 'cb1_53jw_1_1841ae38c0cc44e00ce619b5';
+const CARTO_TILE_URL = `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=${CARTO_API_KEY}`;
+
+// Common port coordinates (maritime channel coordinates)
 const PORT_COORDINATES: Record<string, [number, number]> = {
   // Asia
   shanghai: [31.2304, 121.4737],
@@ -59,36 +65,7 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   piraeus: [37.9435, 23.6481],
   istanbul: [41.0082, 28.9784],
   constanta: [44.1807, 28.6344],
-  // Europe - Scandinavia & Baltic
-  copenhagen: [55.6761, 12.5683],
-  malmo: [55.6050, 13.0038],
-  gothenburg: [57.7089, 11.9746],
-  stockholm: [59.3293, 18.0686],
-  helsinki: [60.1699, 24.9384],
-  oslo: [59.9139, 10.7522],
-  stavanger: [58.9700, 5.7331],
-  bergen: [60.3913, 5.3221],
-  tromso: [69.6496, 18.9560],
-  hammerfest: [70.6634, 23.6821],
-  harstad: [68.7984, 16.5412],
-  esbjerg: [55.4760, 8.4519],
-  odense: [55.4038, 10.4024],
-  kiel: [54.3233, 10.1228],
-  rostock: [54.0924, 12.0991],
-  gdansk: [54.3520, 18.6466],
-  klaipeda: [55.7033, 21.1443],
-  // Europe - Other
-  immingham: [53.6128, -0.2106],
-  belfast: [54.5973, -5.9301],
-  dublin: [53.3498, -6.2603],
-  london: [51.5074, -0.1278],
-  tilbury: [51.4607, 0.3544],
-  den_helder: [52.9533, 4.7610],
-  texel: [53.0600, 4.8000],
-  ijmuiden: [52.4600, 4.6000],
-  amsterdam: [52.3676, 4.9041],
-  utrecht: [52.0907, 5.1214],
-  // Americas
+  // Americas - Maritime channel coordinates
   newark: [40.6895, -74.1745],
   new_york: [40.7128, -74.0060],
   los_angeles: [33.7490, -118.2477],
@@ -96,8 +73,8 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   oakland: [37.8044, -122.2712],
   seattle: [47.6062, -122.3321],
   vancouver: [49.2827, -123.1207],
-  houston: [29.7604, -95.3698],
-  galveston: [29.3013, -94.7977],
+  houston: [29.728, -95.003], // Barbours Cut / Houston Ship Channel
+  galveston: [29.310, -94.792], // Galveston Harbor Entrance
   miami: [25.7617, -80.1918],
   savannah: [32.0835, -81.0998],
   charleston: [32.7765, -79.9311],
@@ -106,85 +83,83 @@ const PORT_COORDINATES: Record<string, [number, number]> = {
   manzanillo: [19.0536, -104.3122],
   lazaro_cardenas: [17.9596, -102.1970],
   santos: [-23.9633, -46.3333],
-  recife: [-8.0476, -34.8770],
-  salvador: [-12.9714, -38.5124],
-  // Africa
-  durban: [-29.8587, 31.0218],
-  cape_town: [-33.9249, 18.4241],
-  tangier: [35.7595, -5.8340],
-  casablanca: [33.5731, -7.5898],
-  alexandria: [31.2001, 29.9187],
-  lagos: [6.4541, 3.3947],
-  // Oceania
-  sydney: [-33.8688, 151.2093],
-  melbourne: [-37.8136, 144.9631],
-  auckland: [-36.8485, 174.7633],
-  // Waterways / Regions
-  suez_canal: [30.5852, 32.2654],
-  pacific_ocean: [28.0, -160.0],
-  north_sea: [56.0, 3.0],
-  english_channel: [50.5, -1.0],
-  baltic_sea: [57.0, 18.0],
-  mediterranean: [38.0, 15.0],
-  gulf_of_mexico: [25.0, -90.0],
-  norwegian_sea: [67.0, 8.0],
-  atlantic_coast: [-5.0, -35.0],
-  marmara: [40.7, 28.9],
-  black_sea: [43.0, 34.0],
-  aegean_sea: [38.5, 25.0],
-  ligurian_sea: [43.5, 9.0],
-  inland_sea: [34.3, 133.5],
-  east_china_sea: [30.0, 126.0],
-  irish_sea: [53.5, -5.0],
-  scheldt: [51.4, 4.0],
-  canal: [52.2, 5.0],
-  nieuwe_waterweg: [51.95, 4.1],
-  thames: [51.5, 0.5],
 };
 
 function getPortCoordinates(location?: string): [number, number] | undefined {
   if (!location) return undefined;
-
-  // Normalize: lowercase, trim
   const loc = location.toLowerCase().trim();
 
-  // Try exact match with various key formats
   const keyNoSpaces = loc.replace(/[^a-z]/g, '');
   if (PORT_COORDINATES[keyNoSpaces]) return PORT_COORDINATES[keyNoSpaces];
 
   const keyUnderscore = loc.replace(/\s+/g, '_').replace(/[^a-z_]/g, '');
   if (PORT_COORDINATES[keyUnderscore]) return PORT_COORDINATES[keyUnderscore];
 
-  // Try without common suffixes/prefixes
   const cleaned = loc
     .replace(/^port\s+of\s+/i, '')
     .replace(/\s+port$/i, '')
-    .replace(/,.*$/, '') // Remove country after comma
+    .replace(/,.*$/, '')
     .trim()
     .replace(/\s+/g, '_')
     .replace(/[^a-z_]/g, '');
   if (PORT_COORDINATES[cleaned]) return PORT_COORDINATES[cleaned];
 
-  // Try each word individually
-  const words = loc.split(/[\s,|]+/).filter(w => w.length > 2);
+  const words = loc.split(/[\s,|]+/).filter((w) => w.length > 2);
   for (const word of words) {
     const wordKey = word.replace(/[^a-z]/g, '');
     if (PORT_COORDINATES[wordKey]) return PORT_COORDINATES[wordKey];
   }
 
-  // Try partial match against all port keys
   for (const [portKey, coords] of Object.entries(PORT_COORDINATES)) {
-    // Check if location contains the port key or vice versa
     if (keyNoSpaces.includes(portKey) || portKey.includes(keyNoSpaces)) {
-      return coords;
-    }
-    // Check underscore version
-    if (keyUnderscore.includes(portKey) || portKey.includes(keyUnderscore.replace(/_/g, ''))) {
       return coords;
     }
   }
 
   return undefined;
+}
+
+// Exactly matches VesselTracking.tsx rotating chevron icon
+function createVesselMarkerIcon(status: string = 'active', heading: number = 0) {
+  const colors: Record<string, string> = {
+    active: '#22c55e',
+    underway: '#22c55e',
+    stale: '#f59e0b',
+    anchored: '#eab308',
+    moored: '#f97316',
+    silent: '#ef4444',
+    danger: '#ef4444',
+    delayed: '#ef4444',
+    unknown: '#94a3b8',
+  };
+  const color = colors[status.toLowerCase()] || colors.active;
+  const size = 32;
+  const strokeColor = '#38bdf8';
+  const strokeWidth = 2.5;
+
+  return L.divIcon({
+    className: 'custom-vessel-marker',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+    popupAnchor: [0, -size / 2],
+    html: `
+      <div style="transform: rotate(${heading}deg); width: ${size}px; height: ${size}px; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.7));">
+        <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none">
+          <polygon points="12,2 20,20 12,16 4,20" fill="${color}" stroke="${strokeColor}" stroke-width="${strokeWidth}"/>
+        </svg>
+      </div>
+    `,
+  });
+}
+
+function FlyToPosition({ position }: { position: [number, number] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (position && Array.isArray(position) && Number.isFinite(position[0]) && Number.isFinite(position[1])) {
+      map.flyTo(position, 8, { duration: 1.2 });
+    }
+  }, [position, map]);
+  return null;
 }
 
 interface VesselMapProps {
@@ -197,93 +172,9 @@ interface VesselMapProps {
   speed?: number;
   progress?: number;
   transportMode?: string;
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  underway: '#22c55e', // green
-  anchored: '#eab308', // yellow/amber
-  moored: '#f97316', // orange
-  waiting: '#eab308', // yellow
-  delayed: '#ef4444', // red
-  stopped: '#ef4444', // red
-  not_under_command: '#ef4444', // red
-  at_port: '#3b82f6', // blue
-  default: '#64748b', // slate
-};
-
-function getStatusColor(status?: string): string {
-  if (!status) return STATUS_COLORS.default;
-  const normalized = status.toLowerCase();
-
-  // Green — actively moving
-  if (
-    normalized.includes('under way') ||
-    normalized.includes('underway') ||
-    normalized.includes('sailing') ||
-    normalized.includes('using engine') ||
-    normalized === 'active'
-  ) {
-    return STATUS_COLORS.underway;
-  }
-
-  // Red — problem states
-  if (
-    normalized.includes('delay') ||
-    normalized.includes('not under command') ||
-    normalized.includes('aground') ||
-    normalized.includes('disabled') ||
-    normalized.includes('stopped')
-  ) {
-    return STATUS_COLORS.delayed;
-  }
-
-  // Yellow/Amber — stationary but not a problem
-  if (
-    normalized.includes('anchor') ||
-    normalized.includes('wait') ||
-    normalized.includes('restricted')
-  ) {
-    return STATUS_COLORS.anchored;
-  }
-
-  // Orange — moored
-  if (normalized.includes('moor') || normalized.includes('berth')) {
-    return STATUS_COLORS.moored;
-  }
-
-  // Blue — at port
-  if (normalized.includes('port')) {
-    return STATUS_COLORS.at_port;
-  }
-
-  return STATUS_COLORS.default;
-}
-
-function createCustomIcon(color: string): L.DivIcon {
-  const vesselSvg = `<path d="M12 2L2 22h20L12 2zm0 4l7 14H5l7-14z"/>`;
-
-  return L.divIcon({
-    className: 'custom-vessel-icon',
-    html: `
-      <div style="
-        width: 32px;
-        height: 32px;
-        background: ${color};
-        border: 3px solid white;
-        border-radius: 50%;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      ">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="white">
-          ${vesselSvg}
-        </svg>
-      </div>
-    `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-  });
+  imoNumber?: string;
+  mmsi?: string;
+  heading?: number;
 }
 
 export function VesselMap({
@@ -292,223 +183,259 @@ export function VesselMap({
   destination,
   latitude,
   longitude,
-  status,
+  status = 'active',
   speed,
   progress,
-  transportMode: _transportMode = 'sea',
+  imoNumber,
+  mmsi: _mmsi,
+  heading = 0,
 }: VesselMapProps) {
-  // Get coordinates from port names
+  const { dangerZones, setDangerZones } = useVesselStore();
+
+  useEffect(() => {
+    if (!dangerZones || dangerZones.length === 0) {
+      fetchDangerZones().then((res) => setDangerZones(res.zones || [])).catch(() => {});
+    }
+  }, [dangerZones?.length, setDangerZones]);
+
+  // Fetch real historical track if IMO is available
+  const trackQuery = useQuery({
+    queryKey: ['vessel-track', imoNumber],
+    queryFn: () => fetchVesselTrack(imoNumber!, { hours: 48 }),
+    enabled: Boolean(imoNumber),
+    staleTime: 60_000,
+  });
+
   const originCoords = getPortCoordinates(origin);
   const destCoords = getPortCoordinates(destination);
 
-  // Default coordinates if vessel position is not available
-  const vesselLat = latitude ?? 20;
-  const vesselLon = longitude ?? 0;
-
-  if (typeof latitude !== 'number') {
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     return (
-      <div className="flex h-64 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/50 text-slate-500">
-        <p className="text-sm">Position not available</p>
+      <div className="flex h-72 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/50 text-slate-500">
+        <p className="text-sm">Position telemetry not available</p>
       </div>
     );
   }
 
-  const currentLat = vesselLat;
-  const currentLon = vesselLon;
-  const currentStatus = status;
-  const currentSpeed = speed;
-  const statusColor = getStatusColor(currentStatus);
+  const currentLat = latitude;
+  const currentLon = longitude;
+  const currentHeading = heading;
+  const displayStatus = status.toLowerCase();
+
+  const trackPositions: [number, number][] = trackQuery.data?.positions
+    ? (trackQuery.data.positions
+        .map((p: any) => {
+          const lat = typeof p.latitude === 'number' ? p.latitude : p.lat;
+          const lon = typeof p.longitude === 'number' ? p.longitude : p.lon;
+          if (typeof lat === 'number' && typeof lon === 'number' && Number.isFinite(lat) && Number.isFinite(lon)) {
+            return [lat, lon] as [number, number];
+          }
+          return null;
+        })
+        .filter((pt: any): pt is [number, number] => pt !== null))
+    : [];
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-white">Live Vessel Tracking</h3>
-        </div>
-        {currentStatus && (
-          <span
-            className="flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium"
-            style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
-          >
-            <span
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: statusColor }}
-            />
-            {currentStatus.toUpperCase()}
+          <span className="rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-bold text-emerald-400">
+            ● LIVE AIS
           </span>
-        )}
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          {speed !== undefined && (
+            <span className="text-slate-400">
+              Speed: <span className="text-cyan-400 font-mono font-medium">{speed.toFixed(1)} kn</span>
+            </span>
+          )}
+          {currentHeading !== undefined && (
+            <span className="text-slate-400">
+              Heading: <span className="text-cyan-400 font-mono font-medium">{Math.round(currentHeading)}°</span>
+            </span>
+          )}
+          <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-xs font-semibold text-emerald-400 uppercase">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {displayStatus}
+          </span>
+        </div>
       </div>
 
-      <div className="h-64 overflow-hidden rounded-lg border border-slate-800">
+      <div className="h-72 overflow-hidden rounded-xl border border-slate-800 shadow-2xl relative">
         <MapContainer
           center={[currentLat, currentLon]}
-          zoom={5}
-          style={{ height: '100%', width: '100%', background: '#0f172a' }}
+          zoom={8}
+          minZoom={2}
+          maxZoom={18}
+          style={{ height: '100%', width: '100%', background: '#070f1e' }}
           attributionControl={false}
         >
+          {/* Real Carto Dark Tiles — Exact match with VesselTracking page */}
           <TileLayer
-            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            className="map-tiles-dark"
+            url={CARTO_TILE_URL}
+            attribution='&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://openstreetmap.org">OSM</a>'
+            subdomains="abcd"
+            maxZoom={19}
           />
 
-          {/* Route lines via sub-component */}
-          <RouteLines
-            origin={originCoords}
-            vessel={
-              typeof currentLat === 'number' && typeof currentLon === 'number'
-                ? [currentLat, currentLon]
-                : undefined
-            }
-            destination={destCoords}
-            status={currentStatus}
-          />
+          {/* Critical Maritime Danger Zones Overlay */}
+          <DangerZoneOverlay />
 
-          {/* Fit viewport to all visible points */}
-          <FitViewport
-            origin={originCoords}
-            vessel={
-              typeof currentLat === 'number' && typeof currentLon === 'number'
-                ? [currentLat, currentLon]
-                : undefined
-            }
-            destination={destCoords}
-          />
+          {/* Smooth auto-focus camera */}
+          <FlyToPosition position={[currentLat, currentLon]} />
 
-          {/* Weather overlay for route: origin, vessel position, and destination */}
+          {/* Historical vessel track polyline */}
+          {trackPositions.length >= 2 && (
+            <Polyline
+              positions={trackPositions}
+              pathOptions={{
+                color: '#38bdf8',
+                weight: 2.5,
+                opacity: 0.85,
+                dashArray: '6, 6',
+              }}
+            />
+          )}
+
+          {/* Route path connection to ports */}
+          {originCoords && Array.isArray(originCoords) && Number.isFinite(originCoords[0]) && Number.isFinite(originCoords[1]) && (
+            <Polyline
+              positions={[originCoords, [currentLat, currentLon]]}
+              pathOptions={{
+                color: '#22c55e',
+                weight: 2,
+                opacity: 0.6,
+                dashArray: '4, 4',
+              }}
+            />
+          )}
+          {destCoords && Array.isArray(destCoords) && Number.isFinite(destCoords[0]) && Number.isFinite(destCoords[1]) && (
+            <Polyline
+              positions={[[currentLat, currentLon], destCoords]}
+              pathOptions={{
+                color: '#38bdf8',
+                weight: 2,
+                opacity: 0.6,
+                dashArray: '4, 4',
+              }}
+            />
+          )}
+
+          {/* Weather overlay for route points */}
           <WeatherOverlay
             points={[
               originCoords,
-              typeof currentLat === 'number' && typeof currentLon === 'number'
-                ? [currentLat, currentLon] as [number, number]
-                : undefined,
+              [currentLat, currentLon],
               destCoords,
-            ].filter(Boolean) as [number, number][]}
+            ].filter((pt): pt is [number, number] => Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))}
           />
 
-          {/* Current position marker */}
+          {/* Live Vessel Chevron Marker */}
           <Marker
             position={[currentLat, currentLon]}
-            icon={createCustomIcon(statusColor)}
+            icon={createVesselMarkerIcon(displayStatus, currentHeading)}
           >
             <Popup>
-              <div className="space-y-1 text-xs">
-                <div className="font-semibold">{vesselName || 'Unknown Vessel'}</div>
-                {currentStatus && <div>Status: {currentStatus}</div>}
-                {currentSpeed && <div>Speed: {currentSpeed} kn</div>}
-                {progress !== undefined && <div>Progress: {progress}%</div>}
-                <div className="text-slate-500">
-                  {currentLat.toFixed(4)}, {currentLon.toFixed(4)}
+              <div className="space-y-1.5 p-1 text-xs font-sans text-slate-200">
+                <div className="font-bold text-white text-sm">{vesselName || 'Tracked Vessel'}</div>
+                {imoNumber && <div className="text-slate-400">IMO: <span className="font-mono text-cyan-300">{imoNumber}</span></div>}
+                <div>Status: <span className="font-semibold text-emerald-400">{status}</span></div>
+                {speed !== undefined && <div>Speed: <span className="font-mono text-white">{speed} kn</span></div>}
+                {currentHeading !== undefined && <div>Heading: <span className="font-mono text-white">{Math.round(currentHeading)}°</span></div>}
+                {progress !== undefined && <div>Route Progress: <span className="font-semibold text-white">{progress}%</span></div>}
+                <div className="text-slate-500 font-mono text-[11px] pt-1 border-t border-slate-700">
+                  {currentLat.toFixed(4)}°N, {Math.abs(currentLon).toFixed(4)}°W
                 </div>
               </div>
             </Popup>
           </Marker>
 
-          {/* Origin marker */}
+          {/* Origin Port Terminal Marker */}
           {originCoords && (
-            <>
-              <CircleMarker
-                center={originCoords}
-                radius={8}
-                pathOptions={{
-                  color: '#3b82f6',
-                  fillColor: '#3b82f6',
-                  fillOpacity: 0.3,
-                  weight: 2,
-                }}
-              />
-              <Marker
-                position={originCoords}
-                icon={L.divIcon({
-                  className: 'custom-origin-icon',
-                  html: `
-                    <div style="
-                      width: 16px;
-                      height: 16px;
-                      background: #3b82f6;
-                      border: 2px solid white;
-                      border-radius: 50%;
-                      box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
-                    "></div>
-                  `,
-                  iconSize: [16, 16],
-                  iconAnchor: [8, 8],
-                })}
-              >
-                <Popup>
-                  <div className="text-xs">
-                    <div className="font-semibold">Origin</div>
-                    <div>{origin || 'Unknown'}</div>
+            <Marker
+              position={originCoords}
+              icon={L.divIcon({
+                className: 'custom-origin-icon',
+                html: `
+                  <div style="display:flex;align-items:center;gap:4px;">
+                    <div style="width:14px;height:14px;background:#3b82f6;border:2px solid white;border-radius:50%;box-shadow:0 0 10px rgba(59,130,246,0.8);"></div>
+                    <span style="background:rgba(15,23,42,0.85);color:#93c5fd;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;border:1px solid #1e3a8a;white-space:nowrap;">
+                      ORIGIN: ${origin || 'Port'}
+                    </span>
                   </div>
-                </Popup>
-              </Marker>
-            </>
+                `,
+                iconSize: [120, 24],
+                iconAnchor: [7, 12],
+              })}
+            >
+              <Popup>
+                <div className="text-xs">
+                  <div className="font-semibold text-blue-400">Origin Port Terminal</div>
+                  <div>{origin}</div>
+                </div>
+              </Popup>
+            </Marker>
           )}
 
-          {/* Destination marker */}
+          {/* Destination Port Terminal Marker */}
           {destCoords && (
-            <>
-              <CircleMarker
-                center={destCoords}
-                radius={8}
-                pathOptions={{
-                  color: '#ef4444',
-                  fillColor: '#ef4444',
-                  fillOpacity: 0.3,
-                  weight: 2,
-                }}
-              />
-              <Marker
-                position={destCoords}
-                icon={L.divIcon({
-                  className: 'custom-dest-icon',
-                  html: `
-                    <div style="
-                      width: 16px;
-                      height: 16px;
-                      background: #ef4444;
-                      border: 2px solid white;
-                      border-radius: 50%;
-                      box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
-                    "></div>
-                  `,
-                  iconSize: [16, 16],
-                  iconAnchor: [8, 8],
-                })}
-              >
-                <Popup>
-                  <div className="text-xs">
-                    <div className="font-semibold">Destination</div>
-                    <div>{destination || 'Unknown'}</div>
+            <Marker
+              position={destCoords}
+              icon={L.divIcon({
+                className: 'custom-dest-icon',
+                html: `
+                  <div style="display:flex;align-items:center;gap:4px;">
+                    <div style="width:14px;height:14px;background:#ef4444;border:2px solid white;border-radius:50%;box-shadow:0 0 10px rgba(239,68,68,0.8);"></div>
+                    <span style="background:rgba(15,23,42,0.85);color:#fca5a5;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;border:1px solid #7f1d1d;white-space:nowrap;">
+                      DEST: ${destination || 'Port'}
+                    </span>
                   </div>
-                </Popup>
-              </Marker>
-            </>
+                `,
+                iconSize: [120, 24],
+                iconAnchor: [7, 12],
+              })}
+            >
+              <Popup>
+                <div className="text-xs">
+                  <div className="font-semibold text-rose-400">Destination Port Terminal</div>
+                  <div>{destination}</div>
+                </div>
+              </Popup>
+            </Marker>
           )}
         </MapContainer>
       </div>
 
-      {/* Legend */}
-      <div className="flex flex-wrap gap-3 text-xs">
+      {/* Maritime Map Legend matching VesselTracking */}
+      <div className="flex flex-wrap items-center gap-4 text-xs bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2">
         <div className="flex items-center gap-1.5">
           <div className="h-2 w-2 rounded-full bg-blue-500" />
-          <span className="text-slate-400">Origin</span>
+          <span className="text-slate-300">Origin Terminal</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-2 w-2 rounded-full bg-red-500" />
-          <span className="text-slate-400">Destination</span>
+          <div className="h-2 w-2 rounded-full bg-rose-500" />
+          <span className="text-slate-300">Destination Terminal</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-2 w-2 rounded-full bg-green-500" />
-          <span className="text-slate-400">Underway</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="#22c55e">
+            <polygon points="12,2 20,20 12,16 4,20" />
+          </svg>
+          <span className="text-slate-300">Underway (Active)</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-2 w-2 rounded-full bg-yellow-500" />
-          <span className="text-slate-400">Anchored/Waiting</span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="#f59e0b">
+            <polygon points="12,2 20,20 12,16 4,20" />
+          </svg>
+          <span className="text-slate-300">Anchored / Stale</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="h-2 w-2 rounded-full bg-red-500" />
-          <span className="text-slate-400">Delayed</span>
+          <span className="h-0.5 w-4 bg-sky-400 inline-block border-b border-dashed border-sky-400" />
+          <span className="text-slate-300">Track History</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-sm bg-rose-500/40 border border-rose-500" />
+          <span className="text-slate-300">Danger Zone</span>
         </div>
       </div>
     </div>

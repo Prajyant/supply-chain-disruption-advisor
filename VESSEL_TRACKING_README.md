@@ -1,4 +1,4 @@
-# Vessel Tracking System
+# Live Vessel Command System
 
 ## Overview
 
@@ -32,9 +32,10 @@ Edit `.env`:
 # Use demo mode (no API key needed):
 AIS_PROVIDER=demo
 
-# Or use a real provider:
-AIS_PROVIDER=marinetraffic  # or: aishub
-AIS_API_KEY=your-api-key-here
+# Use the real-time AISStream WebSocket provider (recommended):
+AIS_PROVIDER=aisstream
+AIS_API_KEY=your-aisstream-api-key
+VESSEL_POLL_INTERVAL_SECONDS=30
 ```
 
 ### 2. Create Watchlist
@@ -72,10 +73,10 @@ The vessel tracking worker starts automatically and begins polling.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AIS_PROVIDER` | `demo` | Provider: `aishub`, `marinetraffic`, `demo` |
+| `AIS_PROVIDER` | `demo` | Provider: `aisstream` (real-time), `aishub`, `marinetraffic`, or `demo` |
 | `AIS_API_KEY` | (none) | API key for the selected provider |
 | `WATCHLIST_CSV_PATH` | `./watchlist.csv` | Path to the vessel watchlist |
-| `VESSEL_POLL_INTERVAL_SECONDS` | `300` | Polling interval (5 minutes) |
+| `VESSEL_POLL_INTERVAL_SECONDS` | `30` | Publish cycle for live AIS updates (seconds) |
 | `VESSEL_SILENCE_THRESHOLD_HOURS` | `6` | Hours before flagging AIS silence |
 | `VESSEL_STALE_THRESHOLD_HOURS` | `1` | Hours before showing stale status |
 | `VESSEL_HISTORY_RETENTION_DAYS` | `90` | Auto-purge positions older than this |
@@ -130,11 +131,12 @@ When `AIS_PROVIDER=demo` or no API key is set:
 ## Frontend
 
 Access the vessel tracking page at `/vessel-tracking`:
-- Full-width Leaflet map with vessel markers and danger zone overlays
+- Full-width Cesium 3D globe driven by the project's current AIS watchlist
 - Sidebar watchlist with status indicators and search/filter
-- Route polylines with time-range selector (24h/7d/30d)
+- Click a vessel to fly to it and inspect its current local wind and sea state
+- Live RSS, weather, and trade signal panel with two-minute server-side caching
 - Fleet statistics bar
-- Real-time WebSocket updates
+- A clear `LIVE AIS` / `DEMO AIS` source indicator so simulated data is never mistaken for real positions
 
 ## Integration Points
 

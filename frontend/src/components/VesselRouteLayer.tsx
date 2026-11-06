@@ -83,10 +83,18 @@ export function VesselRouteLayer() {
         const track = vesselTracks[vessel.imo_number];
         if (!track || track.positions.length < 2) return null;
 
-        const positions: [number, number][] = track.positions.map((p: VesselPosition) => [
-          p.latitude,
-          p.longitude,
-        ]);
+        const positions: [number, number][] = track.positions
+          .map((p: any) => {
+            const lat = typeof p.latitude === 'number' ? p.latitude : p.lat;
+            const lon = typeof p.longitude === 'number' ? p.longitude : p.lon;
+            if (typeof lat === 'number' && typeof lon === 'number' && Number.isFinite(lat) && Number.isFinite(lon)) {
+              return [lat, lon] as [number, number];
+            }
+            return null;
+          })
+          .filter((pt: any): pt is [number, number] => pt !== null);
+
+        if (positions.length < 2) return null;
 
         const style = getRouteStyle(vessel.vessel_type, idx);
 

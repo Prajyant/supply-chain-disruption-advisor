@@ -680,14 +680,41 @@ class AdvisorService:
     # -------------------------------------------------------------------
 
     def get_shipments(self) -> list[dict]:
-        """Get all tracked shipments."""
-        return self.shipment_tracker.get_all_shipments()
+        """Get all tracked shipments from real-time vessel tracking and shipment tracker."""
+        realtime_shipments: list[dict] = []
+        try:
+            from app.ingestion.ais.vessel_worker import get_vessel_worker
+            worker = get_vessel_worker()
+            if not worker.engine:
+                worker.initialize()
+            if worker.engine:
+                realtime_shipments = worker.engine.get_realtime_shipments()
+        except Exception as e:
+            logger.warning(f"Failed to fetch realtime vessel shipments: {e}")
+
+        # Combine with email-derived shipments, avoiding duplicates by shipment_id
+        tracker_shipments = self.shipment_tracker.get_all_shipments()
+        seen_ids = {s.get("shipment_id") for s in realtime_shipments if s.get("shipment_id")}
+        for s in tracker_shipments:
+            sid = s.get("shipment_id")
+            if sid and sid not in seen_ids:
+                realtime_shipments.append(s)
+                seen_ids.add(sid)
+
+        return realtime_shipments
 
     def get_shipments_for_node(self, node_id: str) -> list[dict]:
         """Get shipments for a specific node."""
         node = self.graph_service.get_node(node_id)
         node_name = node.get("name", "") if node else ""
-        return self.shipment_tracker.get_shipments_for_node(node_id, node_name)
+        target = (node_name or node_id.replace("live_", "").replace("_", " ")).lower().strip()
+
+        all_shipments = self.get_shipments()
+        matching = [
+            s for s in all_shipments
+            if target and (target in s.get("supplier", "").lower() or s.get("supplier", "").lower() in target)
+        ]
+        return matching
 
     def chat(self, question: str, top_k: int = 5) -> ChatResponse:
         """Query the AI advisor."""

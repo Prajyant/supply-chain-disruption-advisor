@@ -35,6 +35,11 @@ def create_ais_provider() -> AISProviderBase:
         logger.info("Using AISStream.io real-time WebSocket provider")
         return AISStreamProvider(api_key=api_key)
 
+    if provider_name == "vesselapi":
+        from app.ingestion.ais.vesselapi_provider import VesselApiProvider
+        logger.info("Using VesselAPI REST provider")
+        return VesselApiProvider(api_key=api_key)
+
     if provider_name == "aishub":
         from app.ingestion.ais.aishub_provider import AISHubProvider
         logger.info("Using AISHub AIS provider — will validate key on first poll")
@@ -79,7 +84,7 @@ class VesselTrackingWorker:
         )
 
         watchlist_path = os.getenv("WATCHLIST_CSV_PATH", "./watchlist.csv")
-        poll_interval = int(os.getenv("VESSEL_POLL_INTERVAL_SECONDS", "300"))
+        poll_interval = int(os.getenv("VESSEL_POLL_INTERVAL_SECONDS", "30"))
         silence_threshold = float(os.getenv("VESSEL_SILENCE_THRESHOLD_HOURS", "6"))
         stale_threshold = float(os.getenv("VESSEL_STALE_THRESHOLD_HOURS", "1"))
 

@@ -11,7 +11,9 @@
   "dependencies": {
     "@tanstack/react-query": "^5.28.0",
     "@types/leaflet": "^1.9.8",
+    "@zip.js/zip.js": "2.7.60",
     "axios": "^1.6.7",
+    "cesium": "^1.124.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.3.1",
     "leaflet": "^1.9.4",
@@ -24,6 +26,7 @@
     "reactflow": "^11.10.1",
     "recharts": "^3.8.1",
     "tailwind-merge": "^2.2.1",
+    "vite-plugin-cesium": "^1.2.23",
     "zustand": "^4.5.0"
   },
   "devDependencies": {

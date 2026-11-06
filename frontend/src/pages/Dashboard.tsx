@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { shipmentApi } from '../services/api';
 import { loadDemoShipments } from '../services/shipmentData';
+import { trackVessel } from '../services/vesselApi';
 import {
   AlertTriangle, Activity, RefreshCw, Ship, Radio,
-  Upload, ChevronRight, TrendingUp, Package, Loader2,
+  Upload, ChevronRight, TrendingUp, Package, Loader2, Plus, X,
 } from 'lucide-react';
 import { useViewMode } from '../context/ViewModeContext';
 import { CFODashboard } from './CFODashboard';
@@ -17,18 +18,61 @@ export function Dashboard() {
   const [selectedShipmentId, setSelectedShipmentId] = useState('');
   const { uploadedShipments, setUploadedShipments } = useShipmentStore();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Quick track ship modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newIdentifier, setNewIdentifier] = useState('');
+  const [newName, setNewName] = useState('');
+  const [newSupplier, setNewSupplier] = useState('');
+  const [newOrigin, setNewOrigin] = useState('');
+  const [newDestination, setNewDestination] = useState('');
+  const [newMaterial, setNewMaterial] = useState('');
+  const [isSubmittingShip, setIsSubmittingShip] = useState(false);
 
   const { data: risks, isLoading, error, refetch } = useQuery({
     queryKey: ['risk-summary'],
     queryFn: () => shipmentApi.getRiskSummary().then((res) => res.data),
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 
-  const { data: demoShipments = [], isLoading: shipmentsLoading } = useQuery({
+  const { data: demoShipments = [], isLoading: shipmentsLoading, refetch: refetchShipments } = useQuery({
     queryKey: ['demo-shipments'],
     queryFn: loadDemoShipments,
+    refetchInterval: 15_000,
   });
+
+  const handleAddShip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newIdentifier.trim()) return;
+    setIsSubmittingShip(true);
+    try {
+      await trackVessel({
+        identifier: newIdentifier.trim(),
+        vessel_name: newName.trim(),
+        linked_supplier: newSupplier.trim(),
+        origin: newOrigin.trim() || 'Shanghai',
+        destination: newDestination.trim() || 'Rotterdam',
+        material: newMaterial.trim() || 'Containerized Electronics & Cargo',
+      });
+      setNewIdentifier('');
+      setNewName('');
+      setNewSupplier('');
+      setNewOrigin('');
+      setNewDestination('');
+      setNewMaterial('');
+      setShowAddModal(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['demo-shipments'] }),
+        queryClient.invalidateQueries({ queryKey: ['risk-summary'] }),
+      ]);
+    } catch (err: any) {
+      alert(`Failed to track vessel: ${err?.response?.data?.detail || err.message}`);
+    } finally {
+      setIsSubmittingShip(false);
+    }
+  };
 
   const shipments = uploadedShipments
     ? [...demoShipments, ...uploadedShipments.filter(u => !demoShipments.some(d => d.shipment_id === u.shipment_id))]
@@ -127,7 +171,7 @@ export function Dashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => refetch()} className="btn-secondary flex items-center gap-2 text-sm">
+          <button onClick={() => { refetch(); refetchShipments(); }} className="btn-secondary flex items-center gap-2 text-sm">
             <RefreshCw className="w-3.5 h-3.5" />
             Refresh
           </button>
@@ -159,13 +203,13 @@ export function Dashboard() {
           <div>
             <h2 className="section-title flex items-center gap-2">
               <Package className="w-4 h-4 text-slate-400" />
-              Supplier Shipment Feed
+              Live Fleet & Shipment Feed
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {uploadedShipments
-                ? `Demo data + ${uploadedShipments.length} uploaded`
-                : 'Loaded from demo_shipments.csv'}
-              {' '}· {shipments.length} shipments
+                ? `Live fleet tracking + ${uploadedShipments.length} custom uploaded`
+                : 'Live fleet tracking'}
+              {' '}· {shipments.length} active shipments
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -175,6 +219,13 @@ export function Dashboard() {
                 Uploading…
               </span>
             )}
+            <button
+              className="bg-blue-600 hover:bg-blue-500 text-white font-medium px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-sm transition-colors"
+              onClick={() => setShowAddModal(true)}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Track Vessel
+            </button>
             <button
               className="btn-secondary flex items-center gap-2 text-sm"
               onClick={() => fileInputRef.current?.click()}
@@ -195,6 +246,114 @@ export function Dashboard() {
             />
           </div>
         </div>
+
+        {/* Modal: Track Vessel */}
+        {showAddModal && (
+          <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-xl p-5 w-full max-w-md shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Ship className="w-5 h-5 text-blue-400" />
+                  <h3 className="font-semibold text-white text-base">Add Vessel to Real-Time Tracking</h3>
+                </div>
+                <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleAddShip} className="space-y-3 text-sm">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                    IMO or MMSI Number <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 9811000 or 353136000"
+                    value={newIdentifier}
+                    onChange={(e) => setNewIdentifier(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Vessel Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. EVER GIVEN"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Carrier / Supplier</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Evergreen Marine"
+                      value={newSupplier}
+                      onChange={(e) => setNewSupplier(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Origin Port</label>
+                    <input
+                      type="text"
+                      placeholder="Shanghai"
+                      value={newOrigin}
+                      onChange={(e) => setNewOrigin(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1">Destination Port</label>
+                    <input
+                      type="text"
+                      placeholder="Rotterdam"
+                      value={newDestination}
+                      onChange={(e) => setNewDestination(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300 mb-1">Cargo / Material</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Semiconductors & Components"
+                    value={newMaterial}
+                    onChange={(e) => setNewMaterial(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="px-3 py-1.5 text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingShip}
+                    className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium px-4 py-1.5 rounded-lg flex items-center gap-1.5"
+                  >
+                    {isSubmittingShip && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Start Tracking
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {shipmentsLoading ? (
           <div className="p-6 space-y-3">
@@ -233,7 +392,28 @@ export function Dashboard() {
                       className={`table-row border-b border-slate-800/60 ${isSelected ? 'bg-primary-600/8 border-l-2 border-l-primary-500' : ''}`}
                     >
                       <td className="table-cell">
-                        <span className="mono">{shipment.shipment_id}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="mono font-semibold text-sky-400">{shipment.shipment_id}</span>
+                          {shipment.vessel_status && (
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              shipment.vessel_status.includes('DANGER') ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                              shipment.vessel_status.includes('SILENT') ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                              'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            }`}>
+                              <span className="w-1.5 h-1.5 rounded-full mr-1 bg-current animate-pulse" />
+                              {shipment.vessel_status}
+                            </span>
+                          )}
+                        </div>
+                        {shipment.vessel_name && (
+                          <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                            <Ship className="w-3 h-3 text-slate-500" />
+                            <span className="font-medium text-slate-300">{shipment.vessel_name}</span>
+                            {shipment.vessel_speed_knots !== undefined && shipment.vessel_speed_knots !== null && (
+                              <span className="text-slate-500 font-mono">· {shipment.vessel_speed_knots.toFixed(1)} kts</span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="table-cell font-medium text-white">{shipment.supplier}</td>
                       <td className="table-cell text-slate-400">

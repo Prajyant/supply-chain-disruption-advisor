@@ -63,6 +63,34 @@ export async function searchVessels(query: string): Promise<{ results: VesselSea
   return data;
 }
 
+export async function trackVessel(data: {
+  identifier: string;
+  mmsi?: string;
+  vessel_name?: string;
+  linked_supplier?: string;
+  linked_shipment_id?: string;
+  origin?: string;
+  destination?: string;
+  notes?: string;
+  material?: string;
+  quantity?: number;
+  declared_value_usd?: number;
+  priority?: string;
+}): Promise<{ status: string; vessel: VesselStatus }> {
+  const { data: res } = await api.post('/vessels/track', data);
+  return res;
+}
+
+export async function untrackVessel(identifier: string): Promise<{ status: string; identifier: string }> {
+  const { data } = await api.delete(`/vessels/${identifier}`);
+  return data;
+}
+
+export async function refreshFleet(): Promise<{ status: string; updated_count: number; fleet_summary: FleetSummary }> {
+  const { data } = await api.post('/vessels/refresh');
+  return data;
+}
+
 export async function fetchDangerZones(): Promise<{ zones: DangerZone[] }> {
   const { data } = await api.get('/vessels/danger-zones');
   return data;

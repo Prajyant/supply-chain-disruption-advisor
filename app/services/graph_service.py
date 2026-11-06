@@ -134,19 +134,33 @@ class GraphService:
         from datetime import datetime, timezone
         from pathlib import Path
 
-        csv_path = Path("frontend/public/demo_shipments.csv")
-        if not csv_path.exists():
-            logger.warning("demo_shipments.csv not found, using minimal fallback graph")
-            self._load_minimal_fallback()
-            return
-
+        shipments = []
         try:
-            with open(csv_path, newline="", encoding="utf-8") as f:
-                shipments = list(csv.DictReader(f))
-        except Exception as exc:
-            logger.error("Failed to read demo_shipments.csv: %s", exc)
-            self._load_minimal_fallback()
-            return
+            from app.ingestion.ais.vessel_worker import get_vessel_worker
+            worker = get_vessel_worker()
+            if not worker.engine:
+                worker.initialize()
+            if worker.engine:
+                shipments = worker.engine.get_realtime_shipments()
+        except Exception:
+            shipments = []
+
+        if not shipments:
+            csv_path = Path("frontend/public/demo_shipments.csv")
+            if not csv_path.exists():
+                csv_path = Path("../frontend/public/demo_shipments.csv")
+            if not csv_path.exists():
+                logger.warning("demo_shipments.csv not found, using minimal fallback graph")
+                self._load_minimal_fallback()
+                return
+
+            try:
+                with open(csv_path, newline="", encoding="utf-8") as f:
+                    shipments = list(csv.DictReader(f))
+            except Exception as exc:
+                logger.error("Failed to read demo_shipments.csv: %s", exc)
+                self._load_minimal_fallback()
+                return
 
         def make_id(prefix: str, name: str) -> str:
             return prefix + "_" + re.sub(r"[^a-z0-9]", "_", name.lower().strip())[:30]
@@ -176,13 +190,18 @@ class GraphService:
             supplier = row.get("supplier", "").strip()
             origin = row.get("origin", "").strip()
             destination = row.get("destination", "").strip()
-            route_str = row.get("route_nodes", "")
+            route_val = row.get("route_nodes", "")
             material = row.get("material", "").strip()
 
             if not origin or not destination:
                 continue
 
-            raw_route = [n.strip() for n in route_str.split("|") if n.strip()] if route_str else [origin, destination]
+            if isinstance(route_val, list):
+                raw_route = [str(n).strip() for n in route_val if str(n).strip()]
+            elif isinstance(route_val, str) and route_val:
+                raw_route = [n.strip() for n in route_val.split("|") if n.strip()]
+            else:
+                raw_route = [origin, destination]
 
             # Filter route to: origin → transit hubs → destination
             filtered_route = []
@@ -348,7 +367,12 @@ class GraphService:
             risk = min(risk, 0.95)
 
             # Apply risk to all nodes on this shipment's route
-            route_nodes = [n.strip() for n in route_str.split("|") if n.strip()] if route_str else []
+            if isinstance(route_str, list):
+                route_nodes = [str(n).strip() for n in route_str if str(n).strip()]
+            elif isinstance(route_str, str) and route_str:
+                route_nodes = [n.strip() for n in route_str.split("|") if n.strip()]
+            else:
+                route_nodes = []
             affected_ids = set()
 
             if supplier:
@@ -655,37 +679,50 @@ class GraphService:
         }
 
     def _find_shipments_for_node(self, node: Node) -> list[dict]:
-        """Find shipments from the CSV that pass through this node."""
+        """Find shipments that pass through this node from live fleet or fallback CSV."""
         import csv
         from pathlib import Path
 
-        csv_path = Path("frontend/public/demo_shipments.csv")
-        if not csv_path.exists():
-            return []
-
+        shipments = []
         try:
-            with open(csv_path, newline="", encoding="utf-8") as f:
-                shipments = list(csv.DictReader(f))
+            from app.ingestion.ais.vessel_worker import get_vessel_worker
+            worker = get_vessel_worker()
+            if not worker.engine:
+                worker.initialize()
+            if worker.engine:
+                shipments = worker.engine.get_realtime_shipments()
         except Exception:
-            return []
+            shipments = []
+
+        if not shipments:
+            csv_path = Path("frontend/public/demo_shipments.csv")
+            if not csv_path.exists():
+                csv_path = Path("../frontend/public/demo_shipments.csv")
+            if csv_path.exists():
+                try:
+                    with open(csv_path, newline="", encoding="utf-8") as f:
+                        shipments = list(csv.DictReader(f))
+                except Exception:
+                    return []
+            else:
+                return []
 
         node_lower = node.name.lower().strip()
         results = []
 
         for row in shipments:
-            supplier = row.get("supplier", "").lower().strip()
-            origin = row.get("origin", "").lower().strip()
-            destination = row.get("destination", "").lower().strip()
-            route_str = row.get("route_nodes", "").lower()
+            supplier = str(row.get("supplier", "")).lower().strip()
+            origin = str(row.get("origin", "")).lower().strip()
+            destination = str(row.get("destination", "")).lower().strip()
+            route_val = row.get("route_nodes", "")
+            route_str = " ".join(route_val).lower() if isinstance(route_val, list) else str(route_val).lower()
 
             # Check if this node is on the shipment's route
-            if (node_lower == supplier or node_lower == origin or
-                node_lower == destination or node_lower in route_str):
+            if (node_lower in supplier or supplier in node_lower or
+                node_lower == origin or node_lower == destination or node_lower in route_str):
                 status = "in_transit"
-                vessel_status = row.get("vessel_status", "").lower()
-                if "moored" in vessel_status or "waiting" in vessel_status:
-                    status = "delayed"
-                elif "anchored" in vessel_status:
+                vessel_status = str(row.get("vessel_status", "")).lower()
+                if "moored" in vessel_status or "waiting" in vessel_status or "anchored" in vessel_status or "danger" in vessel_status:
                     status = "delayed"
 
                 results.append({
@@ -696,9 +733,9 @@ class GraphService:
                     "eta_days": int(row.get("lead_time_days", 0) or 0),
                     "origin": row.get("origin", ""),
                     "destination": row.get("destination", ""),
-                    "tracking_number": row.get("imo_number", ""),
-                    "departure_date": row.get("departure_date", ""),
-                    "last_updated": row.get("eta_date", ""),
+                    "tracking_number": str(row.get("imo_number") or row.get("mmsi") or ""),
+                    "departure_date": str(row.get("departure_date", "")),
+                    "last_updated": str(row.get("eta_date", "")),
                 })
 
         return results

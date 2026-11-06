@@ -10,6 +10,7 @@ export default defineConfig({
     },
   },
   server: {
+    host: '0.0.0.0',
     port: 3000,
     proxy: {
       '/auth': {
@@ -41,6 +42,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/vessels': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/intelligence': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

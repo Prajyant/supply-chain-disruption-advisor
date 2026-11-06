@@ -1,12 +1,26 @@
 import { ShipmentInput } from '../types';
+import { shipmentApi } from './api';
 
 export async function loadDemoShipments(): Promise<ShipmentInput[]> {
-  const response = await fetch('/demo_shipments.csv');
-  if (!response.ok) {
-    throw new Error('Unable to load demo shipments CSV');
+  try {
+    const res = await shipmentApi.getShipments();
+    if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+      return res.data as ShipmentInput[];
+    }
+  } catch (err) {
+    console.warn('[ShipmentData] Could not load live /shipments, falling back to local fallback:', err);
   }
-  const csv = await response.text();
-  return parseShipmentsCsv(csv);
+
+  try {
+    const response = await fetch('/demo_shipments.csv');
+    if (response.ok) {
+      const csv = await response.text();
+      return parseShipmentsCsv(csv);
+    }
+  } catch {
+    // Offline / unavailable
+  }
+  return [];
 }
 
 export function parseShipmentsCsv(csv: string): ShipmentInput[] {

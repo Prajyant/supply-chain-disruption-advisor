@@ -75,6 +75,7 @@ export function ShipmentDetail() {
   const navigate = useNavigate();
   const { shipmentId = '' } = useParams();
   const { viewMode } = useViewMode();
+  const [forceLiveAnalysis, setForceLiveAnalysis] = useState(false);
 
   const shipmentsQuery = useQuery({
     queryKey: ['demo-shipments'],
@@ -91,16 +92,19 @@ export function ShipmentDetail() {
     queryKey: ['shipment-analysis', shipmentId],
     enabled: Boolean(shipment),
     queryFn: async () => {
-      // Try preloaded cache first (instant if available)
-      const preloaded = await getPreloadedAnalysis(shipmentId);
-      if (preloaded) {
-        return preloaded as StrandsShipmentRiskResponse;
+      // Try preloaded cache first if not manually forced
+      if (!forceLiveAnalysis) {
+        const preloaded = await getPreloadedAnalysis(shipmentId);
+        if (preloaded) {
+          return preloaded as StrandsShipmentRiskResponse;
+        }
       }
-      // Fall back to live analysis
+      // Live analysis
       const res = await shipmentApi.runStrandsRisk(
         shipment as ShipmentInput,
         `Explain the concrete causes of risk for shipment ${shipmentId} from ${shipment?.origin} to ${shipment?.destination}.`
       );
+      setForceLiveAnalysis(false);
       return res.data as StrandsShipmentRiskResponse;
     },
   });
@@ -129,8 +133,8 @@ export function ShipmentDetail() {
 
   // ── Maritime Intelligence (per-shipment) ──────────────────────────────
   // Extract just the city/port name (strip country codes like "Yantian, CN")
-  const originPort = shipment?.origin?.split(',')[0]?.trim() || '';
-  const destPort = shipment?.destination?.split(',')[0]?.trim() || '';
+  const originPort = shipment?.origin?.split(',')?.[0]?.trim() || '';
+  const destPort = shipment?.destination?.split(',')?.[0]?.trim() || '';
 
   const routeQuery = useQuery({
     queryKey: ['route-distance', originPort, destPort],
@@ -296,7 +300,10 @@ export function ShipmentDetail() {
 
           <div className="flex flex-col gap-2">
             <button
-              onClick={() => analysisQuery.refetch()}
+              onClick={() => {
+                setForceLiveAnalysis(true);
+                analysisQuery.refetch();
+              }}
               disabled={analysisQuery.isFetching}
               className="inline-flex w-fit items-center gap-2 rounded-lg border border-primary-400/30 bg-primary-500/20 px-4 py-3 text-sm font-semibold text-primary-100 shadow-lg shadow-primary-950/30 transition-all hover:bg-primary-500/30 disabled:opacity-50 self-end"
             >
@@ -378,10 +385,13 @@ export function ShipmentDetail() {
               destination={vesselDestination}
               latitude={vesselLat}
               longitude={vesselLon}
-              status={vesselStatus || telemetryEvents[0]?.metadata?.status || telemetryEvents[0]?.metadata?.vessel_status || undefined}
-              speed={vesselSpeed ?? telemetryEvents[0]?.metadata?.speed_knots}
-              progress={telemetryEvents[0]?.metadata?.progress_percent}
+              status={vesselStatus || telemetryEvents?.[0]?.metadata?.status || telemetryEvents?.[0]?.metadata?.vessel_status || undefined}
+              speed={vesselSpeed ?? telemetryEvents?.[0]?.metadata?.speed_knots}
+              progress={telemetryEvents?.[0]?.metadata?.progress_percent}
               transportMode="sea"
+              imoNumber={shipment.imo_number || undefined}
+              mmsi={shipment.mmsi || liveVesselQuery.data?.mmsi || undefined}
+              heading={liveVesselQuery.data?.heading ?? liveVesselQuery.data?.course ?? shipment.vessel_course_degrees ?? 0}
             />
           </section>
         </div>

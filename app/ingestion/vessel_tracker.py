@@ -262,13 +262,13 @@ def normalize_vessel_event(vessel: dict[str, Any]) -> dict[str, Any]:
 def vessel_status_severity(vessel: dict[str, Any]) -> str:
     """Map vessel status/speed into a coarse risk severity."""
     status = str(vessel.get("status", "")).lower()
-    speed = _float_or_none(vessel.get("speed_knots")) or 0.0
+    in_danger = vessel.get("in_danger_zone")
 
-    if any(term in status for term in ["disabled", "aground", "not under command", "stopped"]):
+    if in_danger or any(term in status for term in ["danger", "disabled", "aground", "not under command"]):
         return "critical"
-    if any(term in status for term in ["anchored", "moored", "waiting"]) or speed < 1.0:
+    if any(term in status for term in ["silent", "lost contact"]):
         return "high"
-    if speed < 6.0:
+    if any(term in status for term in ["stale", "delayed"]):
         return "medium"
     return "low"
 

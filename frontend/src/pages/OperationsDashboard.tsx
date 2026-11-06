@@ -50,6 +50,7 @@ export function OperationsDashboard() {
   const { data: demoShipments = [] } = useQuery({
     queryKey: ['demo-shipments'],
     queryFn: loadDemoShipments,
+    refetchInterval: 15_000,
   });
   const { uploadedShipments } = useShipmentStore();
   const shipments = uploadedShipments

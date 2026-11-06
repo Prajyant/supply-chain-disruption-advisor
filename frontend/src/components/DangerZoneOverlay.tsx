@@ -27,6 +27,15 @@ export function DangerZoneOverlay() {
   return (
     <>
       {dangerZones.map((zone: DangerZone) => {
+        if (
+          !zone ||
+          !Number.isFinite(zone.lat_min) ||
+          !Number.isFinite(zone.lon_min) ||
+          !Number.isFinite(zone.lat_max) ||
+          !Number.isFinite(zone.lon_max)
+        ) {
+          return null;
+        }
         const color = ZONE_COLORS[zone.name] || '#ff8800';
         const bounds: [[number, number], [number, number]] = [
           [zone.lat_min, zone.lon_min],

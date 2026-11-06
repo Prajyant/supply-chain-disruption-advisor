@@ -99,6 +99,18 @@ ROUTE_NODE_PROFILES: dict[str, dict[str, Any]] = {
         "country": "germany",
         "aliases": ["europe", "north sea"],
     },
+    "houston": {
+        "latitude": 29.728,
+        "longitude": -95.003,
+        "country": "united states",
+        "aliases": ["houston ship channel", "us gulf", "texas gulf", "galveston bay"],
+    },
+    "galveston": {
+        "latitude": 29.310,
+        "longitude": -94.792,
+        "country": "united states",
+        "aliases": ["galveston bay", "us gulf", "texas gulf", "houston ship channel"],
+    },
     "hormuz": {
         "latitude": 26.5667,
         "longitude": 56.25,
@@ -557,18 +569,18 @@ def build_route_terms(shipment: ShipmentInput) -> set[str]:
     values = [
         shipment.origin,
         shipment.destination,
-        shipment.material,
+        shipment.vessel_name,
+        shipment.supplier,
         shipment.imo_number,
         shipment.mmsi,
         *shipment.route_nodes,
-        *route_profile["countries"],
         *route_profile["aliases"],
     ]
     return {
         normalized
         for value in values
         for normalized in [normalize_term(value)]
-        if normalized
+        if normalized and len(normalized) >= 3
     }
 
 
@@ -673,16 +685,18 @@ def event_matches_weather_route(event: dict[str, Any], route_profile: dict[str, 
 
 def event_matches_trade_route(haystack: str, route_profile: dict[str, Any]) -> bool:
     """Treat official trade signals as route-relevant for international flows."""
-    if any(term in haystack for term in route_profile["countries"] | route_profile["aliases"] if len(term) >= 3):
-        return True
-    return bool(route_profile["is_international"] and any(term in haystack for term in GLOBAL_TRADE_POLICY_TERMS))
+    if not route_profile.get("is_international"):
+        return False
+    # For international routes, require country/alias mention plus a trade policy term
+    has_geo = any(term in haystack for term in route_profile["countries"] | route_profile["aliases"] if len(term) >= 3)
+    has_policy = any(term in haystack for term in GLOBAL_TRADE_POLICY_TERMS)
+    return has_geo and has_policy
 
 
 def event_matches_news_route(haystack: str, route_profile: dict[str, Any]) -> bool:
-    """Match high-impact global or regional news to exposed routes."""
-    if any(term in haystack for term in route_profile["countries"] | route_profile["aliases"] if len(term) >= 3):
-        return True
-    if route_profile["is_sea"] and any(term in haystack for term in GLOBAL_NEWS_PRESSURE_TERMS):
+    """Match high-impact news specifically to exposed route waterways/chokepoints."""
+    # Match route-specific waterways and chokepoints (e.g. houston ship channel, suez, red sea, hormuz)
+    if any(term in haystack for term in route_profile["aliases"] if len(term) >= 4):
         return True
     return False
 
