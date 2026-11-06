@@ -2,81 +2,261 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Base ─────────────────────────────────────────────────────────────── */
 @layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
   body {
-    @apply bg-slate-950 text-slate-100;
+    @apply bg-slate-950 text-slate-100 antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-slate-950; }
+  ::-webkit-scrollbar-thumb { @apply bg-slate-700 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-600; }
+
+  /* Selection — raw CSS avoids opacity-fraction @apply issue */
+  ::selection { background-color: rgba(79, 70, 229, 0.4); color: #fff; }
 }
 
+/* ── Components ───────────────────────────────────────────────────────── */
 @layer components {
+
+  /* ── Cards ── */
   .card {
     @apply bg-slate-900 border border-slate-800 rounded-xl p-6;
   }
+  .card-sm {
+    @apply bg-slate-900 border border-slate-800 rounded-xl p-4;
+  }
+  .card-hover {
+    @apply card transition-all duration-150 cursor-pointer;
+  }
+  .card-hover:hover {
+    @apply -translate-y-0.5 border-slate-700;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
 
+  /* ── Buttons ── */
   .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium px-4 py-2 rounded-lg transition-colors;
+    @apply bg-primary-600 hover:bg-primary-500 active:bg-primary-700 text-white font-semibold px-4 py-2 rounded-lg transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
   }
-
   .btn-secondary {
-    @apply bg-slate-800 hover:bg-slate-700 text-slate-100 font-medium px-4 py-2 rounded-lg transition-colors;
+    @apply bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-100 font-medium px-4 py-2 rounded-lg transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-ghost {
+    @apply text-slate-400 hover:text-white font-medium px-3 py-2 rounded-lg transition-all duration-150;
+  }
+  .btn-ghost:hover {
+    background-color: rgba(30, 41, 59, 0.7);
+  }
+  .btn-danger {
+    @apply border text-red-400 font-medium px-4 py-2 rounded-lg transition-all duration-150;
+    background-color: rgba(220, 38, 38, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+  .btn-danger:hover {
+    background-color: rgba(220, 38, 38, 0.25);
   }
 
+  /* ── Inputs ── */
   .input {
-    @apply bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500;
+    @apply bg-slate-800 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-lg px-4 py-2.5 text-sm transition-all duration-150 focus:outline-none focus:border-primary-500;
+  }
+  .input:focus {
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+  }
+  .input-sm {
+    @apply bg-slate-800 border border-slate-700 text-slate-100 placeholder-slate-500 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-primary-500;
+  }
+  .input-sm:focus {
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
   }
 
-  /* ==================== Phase 3: NodeDetail Panel ==================== */
+  /* ── Badges ── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide;
+  }
+  .badge-critical {
+    @apply badge text-red-400;
+    background-color: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+  }
+  .badge-high {
+    @apply badge text-orange-400;
+    background-color: rgba(249, 115, 22, 0.12);
+    border: 1px solid rgba(249, 115, 22, 0.25);
+  }
+  .badge-medium {
+    @apply badge text-amber-400;
+    background-color: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+  }
+  .badge-low {
+    @apply badge text-emerald-400;
+    background-color: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+  }
+  .badge-info {
+    @apply badge text-blue-400;
+    background-color: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+  }
+  .badge-neutral {
+    @apply badge text-slate-400 border border-slate-700;
+    background-color: rgba(51, 65, 85, 0.5);
+  }
 
+  /* ── Status dots ── */
+  .status-dot          { @apply inline-block w-2 h-2 rounded-full; }
+  .status-dot-live     { @apply status-dot bg-emerald-400 animate-pulse; box-shadow: 0 0 6px rgba(52,211,153,0.7); }
+  .status-dot-warning  { @apply status-dot bg-amber-400; }
+  .status-dot-danger   { @apply status-dot bg-red-400 animate-pulse; }
+  .status-dot-offline  { @apply status-dot bg-slate-600; }
+
+  /* ── Tables ── */
+  .table-header {
+    @apply text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider px-4 py-3;
+  }
+  .table-cell {
+    @apply px-4 py-3 text-sm text-slate-300;
+    border-bottom: 1px solid rgba(30, 41, 59, 0.6);
+  }
+  .table-row {
+    @apply transition-colors duration-100 cursor-pointer;
+  }
+  .table-row:hover {
+    background-color: rgba(30, 41, 59, 0.4);
+  }
+  .table-row-active {
+    @apply border-l-2 border-l-primary-500;
+    background-color: rgba(79, 70, 229, 0.06);
+  }
+
+  /* ── Page structure ── */
+  .page-header   { @apply flex items-start justify-between px-8 pt-8 pb-6; }
+  .page-title    { @apply text-2xl font-bold text-white tracking-tight; }
+  .page-subtitle { @apply text-sm text-slate-400 mt-0.5; }
+  .section-title { @apply text-base font-semibold text-white; }
+
+  /* ── Stat tile ── */
+  .stat-tile  { @apply card-sm flex flex-col gap-1; }
+  .stat-value { @apply text-2xl font-bold tabular-nums text-white; }
+  .stat-label { @apply text-xs text-slate-500 uppercase tracking-wide font-medium; }
+
+  /* ── Node detail panel ── */
   .node-detail-panel {
-    @apply bg-slate-900 border border-slate-800 rounded-lg h-full flex flex-col overflow-hidden;
-    border-left-width: 4px;
+    @apply bg-slate-900 border border-slate-800 rounded-xl h-full flex flex-col overflow-hidden;
+    border-left-width: 3px;
   }
 
-  /* ==================== Phase 3: Shipment Cards ==================== */
-
+  /* ── Shipment card ── */
   .shipment-card {
-    @apply bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 transition-all;
+    @apply rounded-lg p-3 transition-all duration-150;
+    background-color: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(51, 65, 85, 0.5);
   }
-
   .shipment-card:hover {
-    @apply bg-slate-800/80 border-slate-600/50;
+    background-color: rgba(30, 41, 59, 0.8);
+    border-color: rgba(71, 85, 105, 0.6);
   }
 
-  /* ==================== Phase 3: Status Badges ==================== */
-
-  .status-badge {
-    @apply inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium;
-  }
-
-  /* ==================== Phase 3: ETA Progress Bar ==================== */
-
-  .eta-progress {
-    @apply w-full h-1.5 bg-slate-700 rounded-full overflow-hidden;
-  }
-
+  /* ── ETA progress ── */
+  .eta-progress { @apply w-full h-1.5 bg-slate-800 rounded-full overflow-hidden; }
   .eta-progress-bar {
-    @apply h-full bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full;
+    @apply h-full rounded-full;
+    background: linear-gradient(to right, #6366f1, #22d3ee);
     transition: width 0.8s ease-out;
   }
 
-  /* ==================== Phase 3: Risk Timeline ==================== */
+  /* ── Risk timeline ── */
+  .risk-timeline      { @apply space-y-3; }
+  .risk-timeline-item { @apply flex items-start gap-3; }
+  .risk-timeline-dot  { @apply w-2 h-2 rounded-full mt-1.5 shrink-0; }
 
-  .risk-timeline {
-    @apply space-y-3;
+  /* ── Dividers ── */
+  .divider   { @apply h-px bg-slate-800; }
+  .divider-v { @apply w-px bg-slate-800 self-stretch; }
+
+  /* ── Mono ── */
+  .mono { @apply font-mono text-xs text-slate-300; }
+
+  /* ── Alert banners (raw CSS — opacity fractions not allowed in @apply) ── */
+  .alert-critical {
+    @apply flex items-start gap-3 p-4 rounded-xl border text-red-300;
+    background-color: rgba(239, 68, 68, 0.08);
+    border-color: rgba(239, 68, 68, 0.25);
+  }
+  .alert-warning {
+    @apply flex items-start gap-3 p-4 rounded-xl border text-amber-300;
+    background-color: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.25);
+  }
+  .alert-info {
+    @apply flex items-start gap-3 p-4 rounded-xl border text-blue-300;
+    background-color: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.25);
+  }
+  .alert-success {
+    @apply flex items-start gap-3 p-4 rounded-xl border text-emerald-300;
+    background-color: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.25);
   }
 
-  .risk-timeline-item {
-    @apply flex items-start;
-  }
+  /* ── Empty state ── */
+  .empty-state       { @apply flex flex-col items-center justify-center gap-3 py-16 text-center; }
+  .empty-state-icon  { @apply w-12 h-12 text-slate-700; }
+  .empty-state-title { @apply text-base font-semibold text-slate-400; }
+  .empty-state-body  { @apply text-sm text-slate-600 max-w-xs; }
 
-  .risk-timeline-dot {
-    @apply w-2 h-2 rounded-full mt-1.5 shrink-0;
-    background: currentColor;
-  }
+  /* ── Toggle ── */
+  .toggle       { @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none; }
+  .toggle-thumb { @apply inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform duration-200; }
 }
 
-/* ==================== Dark map tiles (OpenStreetMap) ==================== */
-/* Inverts light OSM tiles to produce a dark basemap without needing an API key */
-.map-tiles-dark {
-  filter: invert(100%) hue-rotate(180deg) brightness(0.85) contrast(0.9);
+/* ── Utilities ────────────────────────────────────────────────────────── */
+@layer utilities {
+
+  /* Dark OSM map tiles */
+  .map-tiles-dark {
+    filter: invert(100%) hue-rotate(180deg) brightness(0.85) contrast(0.9);
+  }
+
+  /* Hover lift */
+  .hover-lift {
+    transition: transform 0.15s ease;
+  }
+  .hover-lift:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Glows */
+  .glow-red    { box-shadow: 0 0 12px rgba(239, 68,  68,  0.25); }
+  .glow-amber  { box-shadow: 0 0 12px rgba(245, 158, 11,  0.25); }
+  .glow-green  { box-shadow: 0 0 12px rgba(34,  197, 94,  0.20); }
+  .glow-indigo { box-shadow: 0 0 12px rgba(99,  102, 241, 0.25); }
+
+  /* Line clamps */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Glass */
+  .glass {
+    backdrop-filter: blur(12px);
+    background-color: rgba(15, 23, 42, 0.85);
+  }
+
+  /* Skeleton */
+  .skeleton { @apply bg-slate-800 animate-pulse rounded; }
 }

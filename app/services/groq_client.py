@@ -124,6 +124,12 @@ class GroqConverseClient:
 
         choice = completion.choices[0]
         text = choice.message.content or ""
+
+        # Qwen models emit a <think>...</think> block before the actual answer.
+        # Strip it so downstream JSON parsing and display work correctly.
+        import re as _re
+        text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
+
         stop_reason = _STOP_REASON_MAP.get(choice.finish_reason, "end_turn")
 
         return {

@@ -134,14 +134,14 @@ class ChatService:
 
         if not contexts and not self._global_context:
             return {
-                "answer": "No data available yet. The system is loading — please try again in a moment.",
+                "answer": "I'm still loading system data. In the meantime I can answer general questions — the AI backend appears to be unavailable right now. Please try again in a moment.",
                 "supporting_context": [],
                 "recommendations": [],
             }
 
         if not contexts:
             return {
-                "answer": "I couldn't find relevant information in the data. Try asking about specific suppliers, disruptions, or risk types.",
+                "answer": "The AI backend is currently unavailable so I can only search indexed supply chain data, and nothing matched your query. Please try again shortly — once the LLM is back online I can answer any question.",
                 "supporting_context": [],
                 "recommendations": [],
             }
@@ -277,21 +277,28 @@ class ChatService:
             context_text = "\n".join(context_parts) if context_parts else "No context data available yet."
 
             prompt = (
-                "You are a supply chain disruption advisor with FULL visibility into the system.\n"
-                "You have access to ALL shipments, risks, weather, trade events, and network state.\n"
-                "Answer the user's question using the complete context below.\n"
-                "Be specific — use shipment IDs, supplier names, routes, values, and dates.\n"
-                "Use bullet points for lists. If recommending actions, tag each with an owner: "
-                "[Supplier], [Carrier], [Procurement], [Plant], [Inventory], [Compliance].\n\n"
-                f"FULL SUPPLY CHAIN CONTEXT:\n{context_text}\n\n"
+                "You are a helpful AI assistant. You can answer ANY question on any topic — "
+                "general knowledge, coding, science, history, math, advice, creative writing, and more.\n"
+                "You also have full real-time visibility into a supply chain system, so when the user "
+                "asks about supply chain topics, use the context below to give specific, data-driven answers.\n\n"
+                "Rules:\n"
+                "- Answer EVERY question directly and helpfully, regardless of topic.\n"
+                "- For supply chain questions: be specific — use shipment IDs, supplier names, routes, "
+                "values, and dates from the context. Tag recommendations with an owner: "
+                "[Supplier], [Carrier], [Procurement], [Plant], [Inventory], [Compliance].\n"
+                "- For general questions (not supply chain): just answer them directly and thoroughly. "
+                "Do NOT force a supply chain connection. Do NOT refuse.\n"
+                "- Use bullet points for lists and structured answers.\n\n"
+                f"SUPPLY CHAIN CONTEXT (use only when relevant):\n{context_text}\n\n"
                 f"USER QUESTION: {question}\n\n"
-                "Respond with a JSON object: {\"answer\": \"...\", \"recommendations\": [\"action1\", \"action2\", ...]}"
+                "Respond with a JSON object: {{\"answer\": \"...\", \"recommendations\": [\"action1\", \"action2\", ...]}}\n"
+                "The recommendations array should be empty [] for non-supply-chain questions."
             )
 
             response = self._bedrock_client.converse(
                 modelId=self._bedrock_model_id,
                 messages=[{"role": "user", "content": [{"text": prompt}]}],
-                inferenceConfig={"maxTokens": 1500, "temperature": 0.2},
+                inferenceConfig={"maxTokens": 4096, "temperature": 0.7},
             )
 
             output = response["output"]["message"]["content"][0]["text"]

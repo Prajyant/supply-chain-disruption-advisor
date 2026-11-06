@@ -2,307 +2,255 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { playbookApi } from '../services/api';
 import {
-  Zap,
-  Play,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Clock,
-  Shield,
-  Truck,
-  Building2,
-  Activity,
-  ThumbsUp,
-  ThumbsDown,
-  Loader2,
-  Settings2,
+  Zap, Play, CheckCircle2, XCircle, AlertTriangle,
+  Clock, Shield, Truck, Building2, Activity,
+  ThumbsUp, ThumbsDown, Loader2, BookOpen,
 } from 'lucide-react';
 import { PlaybookWithStats, PlaybookExecution } from '../types';
 
-// Helper for disruption category styling
-const getCategoryStyles = (category: string) => {
-  switch (category) {
-    case 'logistics':
-      return { icon: Truck, color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20' };
-    case 'natural_disaster':
-      return { icon: AlertTriangle, color: 'text-rose-400', bg: 'bg-rose-400/10', border: 'border-rose-400/20' };
-    case 'operations':
-      return { icon: Building2, color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/20' };
-    case 'security':
-      return { icon: Shield, color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/20' };
-    case 'financial':
-      return { icon: Activity, color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/20' };
-    default:
-      return { icon: Zap, color: 'text-slate-400', bg: 'bg-slate-400/10', border: 'border-slate-400/20' };
+/* ── helpers ─────────────────────────────────────────────────────────── */
+function catStyle(cat: string) {
+  switch (cat) {
+    case 'logistics':        return { icon: Truck,        color: 'text-blue-400',    bg: 'bg-blue-400/10',    border: 'border-blue-400/20' };
+    case 'natural_disaster': return { icon: AlertTriangle, color: 'text-rose-400',    bg: 'bg-rose-400/10',    border: 'border-rose-400/20' };
+    case 'operations':       return { icon: Building2,    color: 'text-amber-400',   bg: 'bg-amber-400/10',   border: 'border-amber-400/20' };
+    case 'security':         return { icon: Shield,       color: 'text-purple-400',  bg: 'bg-purple-400/10',  border: 'border-purple-400/20' };
+    case 'financial':        return { icon: Activity,     color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/20' };
+    default:                 return { icon: Zap,          color: 'text-slate-400',   bg: 'bg-slate-400/10',   border: 'border-slate-700' };
   }
-};
+}
 
-const getSeverityColor = (severity: string) => {
-  switch (severity) {
-    case 'critical': return 'text-rose-400 bg-rose-400/10 border-rose-400/20';
-    case 'high': return 'text-orange-400 bg-orange-400/10 border-orange-400/20';
-    case 'medium': return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
-    default: return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
-  }
-};
+function severityBadge(s: string) {
+  if (s === 'critical') return 'badge-critical';
+  if (s === 'high')     return 'badge-high';
+  if (s === 'medium')   return 'badge-medium';
+  return 'badge-low';
+}
 
+/* ── component ───────────────────────────────────────────────────────── */
 export function Playbooks() {
-  const queryClient = useQueryClient();
-  const [toastMessage, setToastMessage] = useState<{title: string, message: string, type: 'success' | 'warning' | 'error'} | null>(null);
+  const qc = useQueryClient();
+  const [toast, setToast] = useState<{
+    title: string; msg: string; type: 'success' | 'warning' | 'error';
+  } | null>(null);
 
-  // Auto-hide toast
   useEffect(() => {
-    if (toastMessage) {
-      const timer = setTimeout(() => setToastMessage(null), 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [toastMessage]);
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
-  // Fetch Playbooks
-  const { data: playbooksData, isLoading: isLoadingPlaybooks } = useQuery({
+  const { data: pbData,   isLoading: loadPb   } = useQuery({
     queryKey: ['playbooks'],
-    queryFn: () => playbookApi.getPlaybooks().then((res) => res.data),
+    queryFn: () => playbookApi.getPlaybooks().then(r => r.data),
   });
-
-  // Fetch Executions
-  const { data: executionsData, isLoading: isLoadingExecutions } = useQuery({
+  const { data: execData, isLoading: loadExec } = useQuery({
     queryKey: ['playbook-executions'],
-    queryFn: () => playbookApi.getExecutions().then((res) => res.data),
-    refetchInterval: 10000, // Refresh every 10s
+    queryFn: () => playbookApi.getExecutions().then(r => r.data),
+    refetchInterval: 10_000,
   });
 
-  // Toggle Mutation
   const toggleMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       playbookApi.togglePlaybook(id, enabled),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['playbooks'] });
-      setToastMessage({
-        title: 'Settings Updated',
-        message: data.data.warning || 'Playbook toggled successfully.',
-        type: 'warning',
-      });
+      qc.invalidateQueries({ queryKey: ['playbooks'] });
+      setToast({ title: 'Updated', msg: data.data.warning || 'Playbook toggled.', type: 'warning' });
     },
   });
 
-  // Simulate Mutation
   const simulateMutation = useMutation({
     mutationFn: (id: string) => playbookApi.simulate(id),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['playbook-executions'] });
-      queryClient.invalidateQueries({ queryKey: ['playbooks'] });
-      setToastMessage({
-        title: 'Simulation Started',
-        message: data.data.message,
-        type: 'success',
-      });
+      qc.invalidateQueries({ queryKey: ['playbook-executions'] });
+      qc.invalidateQueries({ queryKey: ['playbooks'] });
+      setToast({ title: 'Simulation Started', msg: data.data.message, type: 'success' });
     },
-    onError: (error: any) => {
-      setToastMessage({
-        title: 'Simulation Failed',
-        message: error.response?.data?.detail || 'Failed to simulate playbook.',
-        type: 'error',
-      });
-    }
+    onError: (err: any) =>
+      setToast({ title: 'Simulation Failed', msg: err.response?.data?.detail || 'Failed.', type: 'error' }),
   });
 
-  // Feedback Mutation
   const feedbackMutation = useMutation({
-    mutationFn: ({ executionId, decision, comment }: { executionId: string; decision: string; comment?: string }) =>
-      playbookApi.submitFeedback(executionId, decision, comment),
+    mutationFn: ({ id, decision }: { id: string; decision: string }) =>
+      playbookApi.submitFeedback(id, decision),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['playbook-executions'] });
-      queryClient.invalidateQueries({ queryKey: ['playbooks'] });
-      setToastMessage({
-        title: 'Feedback Recorded',
-        message: data.data.message,
-        type: 'success',
-      });
+      qc.invalidateQueries({ queryKey: ['playbook-executions'] });
+      qc.invalidateQueries({ queryKey: ['playbooks'] });
+      setToast({ title: 'Feedback Recorded', msg: data.data.message, type: 'success' });
     },
-    onError: (error: any) => {
-      // Handle 409 Conflict gracefully
-      if (error.response?.status === 409) {
-        setToastMessage({
-          title: 'Feedback Already Recorded',
-          message: 'You have already submitted feedback for this execution.',
-          type: 'warning',
-        });
+    onError: (err: any) => {
+      if (err.response?.status === 409) {
+        setToast({ title: 'Already Submitted', msg: 'Feedback already recorded.', type: 'warning' });
       } else {
-        setToastMessage({
-          title: 'Error',
-          message: 'Failed to record feedback.',
-          type: 'error',
-        });
+        setToast({ title: 'Error', msg: 'Failed to record feedback.', type: 'error' });
       }
-    }
+    },
   });
 
-  const playbooks = (playbooksData?.playbooks || []) as PlaybookWithStats[];
-  const executions = (executionsData?.executions || []) as PlaybookExecution[];
+  const playbooks  = (pbData?.playbooks   || []) as PlaybookWithStats[];
+  const executions = (execData?.executions || []) as PlaybookExecution[];
 
   return (
-    <div className="p-8 h-full flex flex-col relative overflow-hidden bg-slate-950">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className={`absolute top-8 right-8 z-50 p-4 rounded-lg shadow-xl border backdrop-blur-md max-w-md animate-in slide-in-from-top-4 fade-in ${
-          toastMessage.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' :
-          toastMessage.type === 'warning' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' :
-          'bg-rose-500/10 border-rose-500/30 text-rose-400'
+    <div className="p-8 h-full flex flex-col bg-slate-950 relative overflow-hidden">
+
+      {/* ── Toast ── */}
+      {toast && (
+        <div className={`absolute top-8 right-8 z-50 max-w-sm flex items-start gap-3 px-4 py-3.5 rounded-xl border shadow-2xl glass ${
+          toast.type === 'success' ? 'border-emerald-500/30 text-emerald-300' :
+          toast.type === 'warning' ? 'border-amber-500/30  text-amber-300'   :
+                                     'border-red-500/30    text-red-300'
         }`}>
-          <div className="flex gap-3">
-            {toastMessage.type === 'success' && <CheckCircle2 className="w-5 h-5 shrink-0" />}
-            {toastMessage.type === 'warning' && <AlertTriangle className="w-5 h-5 shrink-0" />}
-            {toastMessage.type === 'error' && <XCircle className="w-5 h-5 shrink-0" />}
-            <div>
-              <h4 className="font-medium text-white">{toastMessage.title}</h4>
-              <p className="text-sm mt-1 opacity-90">{toastMessage.message}</p>
-            </div>
-            <button onClick={() => setToastMessage(null)} className="ml-auto opacity-70 hover:opacity-100">
-              <XCircle className="w-4 h-4" />
-            </button>
+          {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />}
+          {toast.type === 'warning' && <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />}
+          {toast.type === 'error'   && <XCircle       className="w-4 h-4 shrink-0 mt-0.5" />}
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-white text-sm">{toast.title}</p>
+            <p className="text-xs mt-0.5 opacity-80">{toast.msg}</p>
           </div>
+          <button onClick={() => setToast(null)} className="opacity-50 hover:opacity-100 ml-2 shrink-0">
+            <XCircle className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-          <Settings2 className="w-6 h-6 text-primary-400" />
+      {/* ── Page header ── */}
+      <div className="shrink-0 mb-7">
+        <h1 className="page-title flex items-center gap-2">
+          <BookOpen className="w-6 h-6 text-primary-400" />
           Automated Playbooks
         </h1>
-        <p className="text-slate-400 mt-1">Rule-based response templates with reinforcement learning feedback loops.</p>
+        <p className="page-subtitle">
+          Rule-based response templates with reinforcement-learning feedback loops
+        </p>
       </div>
 
-      <div className="flex-1 overflow-auto -mr-4 pr-4 custom-scrollbar space-y-12 pb-12">
-        {/* Playbook Library Section */}
+      <div className="flex-1 overflow-y-auto space-y-10 pb-10">
+
+        {/* ── Playbook library ── */}
         <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Zap className="w-5 h-5 text-amber-400" />
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="section-title flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-400" />
               Playbook Library
             </h2>
-            <div className="text-sm text-slate-400 bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800 flex items-center gap-2">
-              <Shield className="w-4 h-4" />
-              <span>8 Active Rules</span>
+            <div className="badge badge-neutral gap-1.5">
+              <Shield className="w-3 h-3" />
+              {playbooks.filter(p => p.enabled).length} Active
             </div>
           </div>
 
-          {isLoadingPlaybooks ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {loadPb ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-64 bg-slate-900/50 rounded-xl border border-slate-800 animate-pulse"></div>
+                <div key={i} className="skeleton h-60 rounded-xl" />
               ))}
             </div>
+          ) : playbooks.length === 0 ? (
+            <div className="empty-state">
+              <BookOpen className="empty-state-icon" />
+              <p className="empty-state-title">No playbooks found</p>
+              <p className="empty-state-body">Run a data ingestion to generate playbooks.</p>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
               {playbooks.map((pb) => {
-                const catStyles = getCategoryStyles(pb.category || 'other');
-                const Icon = catStyles.icon;
-                
+                const cs   = catStyle(pb.category || 'other');
+                const Icon = cs.icon;
                 return (
-                  <div 
-                    key={pb.id} 
-                    className={`relative overflow-hidden bg-slate-900 rounded-xl border transition-all duration-300 ${
-                      pb.enabled ? 'border-slate-700 hover:border-slate-500 shadow-lg shadow-black/20' : 'border-slate-800 opacity-60'
+                  <div
+                    key={pb.id}
+                    className={`relative overflow-hidden bg-slate-900 rounded-xl border transition-all duration-200 ${
+                      pb.enabled
+                        ? 'border-slate-700 hover:border-slate-600 shadow-lg shadow-black/20'
+                        : 'border-slate-800 opacity-55'
                     }`}
                   >
-                    {/* Top color bar */}
-                    <div className={`h-1 w-full ${catStyles.bg}`}></div>
-                    
+                    {/* Category colour stripe */}
+                    <div className={`h-0.5 w-full ${cs.bg}`} />
+
                     <div className="p-5">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center border ${catStyles.bg} ${catStyles.color} ${catStyles.border}`}>
+                      {/* Top row: icon + controls */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${cs.bg} ${cs.color} ${cs.border}`}>
                           <Icon className="w-5 h-5" />
                         </div>
-                        <div className="flex items-center gap-3">
-                          {/* Simulate Button (Demo feature) */}
+                        <div className="flex items-center gap-2">
+                          {/* Simulate */}
                           <button
                             onClick={() => simulateMutation.mutate(pb.id)}
                             disabled={!pb.enabled || simulateMutation.isPending}
-                            className={`p-2 rounded-lg transition-colors ${
-                              pb.enabled 
-                                ? 'bg-primary-600/20 text-primary-400 hover:bg-primary-600/40' 
-                                : 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                            title="Simulate playbook"
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                              pb.enabled
+                                ? 'bg-primary-600/15 text-primary-400 hover:bg-primary-600/30'
+                                : 'bg-slate-800 text-slate-600 cursor-not-allowed'
                             }`}
-                            title="Simulate playbook trigger"
                           >
-                            <Play className="w-4 h-4" />
+                            {simulateMutation.isPending
+                              ? <Loader2 className="w-4 h-4 animate-spin" />
+                              : <Play className="w-4 h-4" />}
                           </button>
-                          
-                          {/* Enable/Disable Toggle */}
+                          {/* Toggle */}
                           <button
                             onClick={() => toggleMutation.mutate({ id: pb.id, enabled: !pb.enabled })}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                               pb.enabled ? 'bg-primary-600' : 'bg-slate-700'
                             }`}
                           >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              pb.enabled ? 'translate-x-6' : 'translate-x-1'
+                            <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                              pb.enabled ? 'translate-x-[18px]' : 'translate-x-1'
                             }`} />
                           </button>
                         </div>
                       </div>
 
-                      <h3 className="text-lg font-medium text-white mb-2">{pb.name}</h3>
-                      <p className="text-sm text-slate-400 mb-6 line-clamp-2 h-10">{pb.description}</p>
+                      <h3 className="text-sm font-bold text-white mb-1.5">{pb.name}</h3>
+                      <p className="text-xs text-slate-400 mb-5 line-clamp-2 min-h-[2.5rem]">{pb.description}</p>
 
-                      <div className="space-y-3 mb-6">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-slate-500 w-24">Trigger:</span>
-                          <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
-                            {pb.trigger.disruption_type}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded border text-[10px] uppercase tracking-wider font-semibold ${getSeverityColor(pb.trigger.min_severity || 'medium')}`}>
+                      {/* Trigger conditions */}
+                      <div className="space-y-2 mb-5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] text-slate-500 w-16 shrink-0">Trigger</span>
+                          <span className="badge badge-neutral text-[10px]">{pb.trigger.disruption_type}</span>
+                          <span className={`badge ${severityBadge(pb.trigger.min_severity || 'medium')} text-[10px]`}>
                             ≥ {pb.trigger.min_severity}
                           </span>
                         </div>
                         {pb.trigger.requires_active_shipment && (
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-slate-500 w-24">Condition:</span>
-                            <span className="text-slate-300">Active shipments required</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 w-16 shrink-0">Condition</span>
+                            <span className="text-[10px] text-slate-400">Active shipments required</span>
                           </div>
                         )}
                         {pb.trigger.requires_low_buffer && (
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-slate-500 w-24">Condition:</span>
-                            <span className="text-slate-300">Buffer ≤ {pb.trigger.buffer_threshold} days</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 w-16 shrink-0">Buffer</span>
+                            <span className="text-[10px] text-slate-400">≤ {pb.trigger.buffer_threshold} days</span>
                           </div>
                         )}
                       </div>
 
-                      {/* Footer Stats */}
-                      <div className="pt-4 border-t border-slate-800 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-slate-500" />
-                          <span className="text-xs text-slate-400">{pb.times_triggered} triggers</span>
+                      {/* Footer stats */}
+                      <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <Clock className="w-3.5 h-3.5" />
+                          {pb.times_triggered} trigger{pb.times_triggered !== 1 ? 's' : ''}
                         </div>
                         {pb.acceptance_rate !== null ? (
                           <div className="flex items-center gap-2">
                             <div className="text-right">
-                              <div className="text-xs font-semibold text-emerald-400">{pb.acceptance_rate}%</div>
-                              <div className="text-[10px] text-slate-500 uppercase tracking-wider">Acceptance</div>
+                              <p className="text-xs font-bold text-emerald-400">{pb.acceptance_rate}%</p>
+                              <p className="text-[9px] text-slate-600 uppercase tracking-wide">Acceptance</p>
                             </div>
-                            {/* Circular progress indicator */}
-                            <div className="w-8 h-8 rounded-full border-2 border-slate-800 flex items-center justify-center relative overflow-hidden bg-slate-900">
-                              <svg className="w-full h-full transform -rotate-90 absolute" viewBox="0 0 36 36">
-                                <path
-                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                  fill="none"
-                                  stroke="#0f172a"
-                                  strokeWidth="3"
-                                />
-                                <path
-                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                                  fill="none"
-                                  stroke="#34d399"
-                                  strokeWidth="3"
-                                  strokeDasharray={`${pb.acceptance_rate}, 100`}
-                                />
-                              </svg>
-                            </div>
+                            {/* Mini circular progress */}
+                            <svg className="w-7 h-7 -rotate-90" viewBox="0 0 36 36">
+                              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#1e293b" strokeWidth="3.5" />
+                              <circle cx="18" cy="18" r="15.9" fill="none" stroke="#34d399" strokeWidth="3.5"
+                                strokeDasharray={`${pb.acceptance_rate} 100`} strokeLinecap="round" />
+                            </svg>
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-600 italic">No feedback yet</span>
+                          <span className="text-[10px] text-slate-600 italic">No feedback yet</span>
                         )}
                       </div>
                     </div>
@@ -313,75 +261,70 @@ export function Playbooks() {
           )}
         </section>
 
-        {/* Execution Log Section */}
+        {/* ── Execution log ── */}
         <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Activity className="w-5 h-5 text-emerald-400" />
-              Execution Log & Feedback
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="section-title flex items-center gap-2">
+              <Activity className="w-4 h-4 text-emerald-400" />
+              Execution Log &amp; Feedback
             </h2>
+            {executions.length > 0 && (
+              <span className="text-xs text-slate-500">{executions.length} execution{executions.length !== 1 ? 's' : ''}</span>
+            )}
           </div>
 
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-            {isLoadingExecutions ? (
-              <div className="p-8 flex justify-center">
-                <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+          <div className="card !p-0 overflow-hidden">
+            {loadExec ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
               </div>
             ) : executions.length === 0 ? (
-              <div className="p-12 text-center">
-                <Shield className="w-12 h-12 text-slate-700 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-slate-300">No Playbooks Triggered</h3>
-                <p className="text-slate-500 mt-1 max-w-md mx-auto">
-                  Playbooks will appear here automatically when risk conditions are met during data ingestion.
+              <div className="empty-state py-14">
+                <Shield className="empty-state-icon" />
+                <p className="empty-state-title">No Playbooks Triggered Yet</p>
+                <p className="empty-state-body">
+                  Playbooks trigger automatically when risk conditions are met during data ingestion,
+                  or you can simulate one above.
                 </p>
               </div>
             ) : (
               <div className="divide-y divide-slate-800/50">
                 {executions.map((exec) => (
-                  <div key={exec.execution_id} className="p-6 transition-colors hover:bg-slate-800/30">
+                  <div key={exec.execution_id} className="p-6 hover:bg-slate-800/20 transition-colors">
                     <div className="flex flex-col lg:flex-row gap-6">
-                      
-                      {/* Left: Context */}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-3">
-                          <span className={`px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider border ${getSeverityColor(exec.severity)}`}>
-                            {exec.severity}
-                          </span>
+
+                      {/* Left: context + actions */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center flex-wrap gap-2 mb-3">
+                          <span className={`badge ${severityBadge(exec.severity)}`}>{exec.severity}</span>
                           {exec.is_simulation && (
-                            <span className="px-2 py-1 rounded text-xs font-semibold uppercase tracking-wider bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                              SIMULATION
+                            <span className="badge bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                              Simulation
                             </span>
                           )}
-                          <span className="text-sm text-slate-400 flex items-center gap-1">
-                            <Clock className="w-4 h-4" />
+                          <span className="text-xs text-slate-500 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
                             {new Date(exec.triggered_at).toLocaleString()}
                           </span>
                         </div>
-                        
-                        <h3 className="text-lg font-medium text-white mb-1">{exec.playbook_name}</h3>
-                        <p className="text-sm text-slate-400 mb-4">
-                          Triggered by risk on node <strong className="text-slate-200">{exec.node_name}</strong>
+
+                        <h3 className="text-sm font-bold text-white mb-0.5">{exec.playbook_name}</h3>
+                        <p className="text-xs text-slate-400 mb-4">
+                          Triggered by risk on node <span className="text-slate-200 font-semibold">{exec.node_name}</span>
                         </p>
 
-                        {/* Action Steps */}
-                        <div className="space-y-3 mt-4">
-                          <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Automated Actions</h4>
+                        <div className="space-y-2">
+                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Automated Actions</p>
                           {exec.actions.map((action, idx) => (
-                            <div key={idx} className="flex gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800/60">
-                              <div className="mt-0.5">
-                                <div className="w-5 h-5 rounded-full bg-primary-600/20 flex items-center justify-center border border-primary-600/30">
-                                  <span className="text-[10px] text-primary-400 font-bold">{idx + 1}</span>
-                                </div>
+                            <div key={idx} className="flex gap-3 bg-slate-950/60 px-3 py-2.5 rounded-xl border border-slate-800/60">
+                              <div className="w-5 h-5 rounded-full bg-primary-600/15 border border-primary-600/25 flex items-center justify-center text-[10px] text-primary-400 font-bold shrink-0 mt-0.5">
+                                {idx + 1}
                               </div>
                               <div>
                                 <p className="text-sm text-slate-200">{action.description}</p>
-                                <div className="flex gap-3 mt-2 text-xs text-slate-500 font-medium">
-                                  <span className="capitalize text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">
-                                    Target: {action.target}
-                                  </span>
-                                  <span className="capitalize bg-slate-800 px-1.5 py-0.5 rounded">
-                                    {action.urgency.replace('_', ' ')}
-                                  </span>
+                                <div className="flex gap-2 mt-1.5">
+                                  <span className="badge badge-neutral text-[10px]">Target: {action.target}</span>
+                                  <span className="badge badge-neutral text-[10px]">{action.urgency?.replace('_', ' ')}</span>
                                 </div>
                               </div>
                             </div>
@@ -389,56 +332,51 @@ export function Playbooks() {
                         </div>
                       </div>
 
-                      {/* Right: Feedback Loop */}
-                      <div className="lg:w-72 flex flex-col justify-center bg-slate-950/50 rounded-xl p-5 border border-slate-800">
+                      {/* Right: feedback */}
+                      <div className="lg:w-64 shrink-0 bg-slate-950/50 rounded-xl border border-slate-800 p-5 flex flex-col justify-center">
                         {exec.status === 'pending' ? (
                           <>
-                            <div className="text-center mb-4">
-                              <h4 className="text-sm font-medium text-slate-300">Review Actions</h4>
-                              <p className="text-xs text-slate-500 mt-1">Help train the model by providing feedback</p>
-                            </div>
+                            <p className="text-sm font-semibold text-white text-center mb-0.5">Review Actions</p>
+                            <p className="text-xs text-slate-500 text-center mb-4">Help train the model</p>
                             <div className="flex gap-3">
                               <button
-                                onClick={() => feedbackMutation.mutate({ executionId: exec.execution_id, decision: 'accepted' })}
+                                onClick={() => feedbackMutation.mutate({ id: exec.execution_id, decision: 'accepted' })}
                                 disabled={feedbackMutation.isPending}
-                                className="flex-1 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg border border-emerald-500/30 flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                className="flex-1 py-2 rounded-xl border border-emerald-500/30 bg-emerald-500/8 text-emerald-400 hover:bg-emerald-500/15 flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-40"
                               >
-                                <ThumbsUp className="w-4 h-4" />
-                                <span>Accept</span>
+                                <ThumbsUp className="w-4 h-4" /> Accept
                               </button>
                               <button
-                                onClick={() => feedbackMutation.mutate({ executionId: exec.execution_id, decision: 'rejected' })}
+                                onClick={() => feedbackMutation.mutate({ id: exec.execution_id, decision: 'rejected' })}
                                 disabled={feedbackMutation.isPending}
-                                className="flex-1 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg border border-rose-500/30 flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                className="flex-1 py-2 rounded-xl border border-rose-500/30 bg-rose-500/8 text-rose-400 hover:bg-rose-500/15 flex items-center justify-center gap-2 text-sm font-medium transition-colors disabled:opacity-40"
                               >
-                                <ThumbsDown className="w-4 h-4" />
-                                <span>Reject</span>
+                                <ThumbsDown className="w-4 h-4" /> Reject
                               </button>
                             </div>
                           </>
                         ) : (
-                          <div className="text-center py-4">
+                          <div className="flex flex-col items-center gap-2 py-4">
                             {exec.status === 'accepted' ? (
-                              <div className="inline-flex flex-col items-center">
-                                <div className="w-12 h-12 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center mb-3 shadow-[0_0_15px_rgba(52,211,153,0.15)]">
-                                  <ThumbsUp className="w-6 h-6" />
+                              <>
+                                <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center">
+                                  <ThumbsUp className="w-6 h-6 text-emerald-400" />
                                 </div>
-                                <span className="text-emerald-400 font-medium">Actions Accepted</span>
-                                <span className="text-xs text-slate-500 mt-1">Feedback recorded</span>
-                              </div>
+                                <p className="text-emerald-400 font-semibold text-sm">Accepted</p>
+                              </>
                             ) : (
-                              <div className="inline-flex flex-col items-center">
-                                <div className="w-12 h-12 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center mb-3 shadow-[0_0_15px_rgba(244,63,94,0.15)]">
-                                  <ThumbsDown className="w-6 h-6" />
+                              <>
+                                <div className="w-12 h-12 rounded-full bg-rose-500/10 border border-rose-500/25 flex items-center justify-center">
+                                  <ThumbsDown className="w-6 h-6 text-rose-400" />
                                 </div>
-                                <span className="text-rose-400 font-medium">Actions Rejected</span>
-                                <span className="text-xs text-slate-500 mt-1">Feedback recorded</span>
-                              </div>
+                                <p className="text-rose-400 font-semibold text-sm">Rejected</p>
+                              </>
                             )}
+                            <p className="text-xs text-slate-600">Feedback recorded</p>
                           </div>
                         )}
                       </div>
-                      
+
                     </div>
                   </div>
                 ))}
@@ -446,6 +384,7 @@ export function Playbooks() {
             )}
           </div>
         </section>
+
       </div>
     </div>
   );

@@ -13,7 +13,9 @@ const quickQuestions = [
   'What is the current risk status?',
   'Are any shipments delayed?',
   'What weather is affecting logistics?',
-  'Supply chain health overview',
+  'Explain how supply chain risk scoring works',
+  'What is the capital of France?',
+  'Write a Python function to sort a list',
 ];
 
 export function GlobalChat() {
@@ -230,7 +232,7 @@ export function GlobalChat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about risks, shipments, weather..."
+            placeholder="Ask me anything — supply chain, general knowledge, coding..."
             className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-primary-500"
             disabled={chatMutation.isPending}
           />

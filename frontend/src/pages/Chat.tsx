@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { chatApi } from '../services/api';
-import { Send, Bot, User } from 'lucide-react';
+import { Send, Bot, User, Sparkles, ChevronRight } from 'lucide-react';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -9,156 +9,221 @@ interface ChatMessage {
   recommendations?: string[];
 }
 
-const quickQuestions = [
-  'What are the critical risks?',
-  'Which suppliers are affected?',
+const QUICK_QUESTIONS = [
+  'What are the critical risks right now?',
+  'Which suppliers are most affected?',
   'What mitigation actions should we take?',
-  'Show me logistics disruptions',
+  'Summarize supply chain health',
+  'What is machine learning?',
+  'Write a Python function to sort a list',
 ];
 
 export function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const chatMutation = useMutation({
     mutationFn: (question: string) =>
-      chatApi.chat(question).then((res) => res.data),
+      chatApi.chat(question).then(r => r.data),
     onSuccess: (data, question) => {
-      setMessages((prev) => [
+      setMessages(prev => [
         ...prev,
         { role: 'user', content: question },
-        {
-          role: 'assistant',
-          content: data.answer,
-          recommendations: data.recommendations,
-        },
+        { role: 'assistant', content: data.answer, recommendations: data.recommendations },
+      ]);
+    },
+    onError: (_err, question) => {
+      setMessages(prev => [
+        ...prev,
+        { role: 'user', content: question },
+        { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' },
       ]);
     },
   });
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, chatMutation.isPending]);
+
   const handleSend = () => {
-    if (!input.trim()) return;
-    chatMutation.mutate(input);
+    const q = input.trim();
+    if (!q || chatMutation.isPending) return;
+    chatMutation.mutate(q);
     setInput('');
+    inputRef.current?.focus();
   };
 
-  const handleQuickQuestion = (question: string) => {
-    setInput(question);
-    chatMutation.mutate(question);
+  const handleQuick = (q: string) => {
+    if (chatMutation.isPending) return;
+    chatMutation.mutate(q);
+    setInput('');
+    inputRef.current?.focus();
   };
 
   return (
-    <div className="p-8 h-full flex flex-col">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">AI Advisor</h1>
-        <p className="text-slate-400">Ask questions about supply chain risks and get mitigation recommendations</p>
-      </div>
+    <div className="h-full flex flex-col bg-slate-950">
 
-      {/* Quick Questions */}
-      <div className="mb-6">
-        <p className="text-sm text-slate-400 mb-3">Quick Questions</p>
-        <div className="flex flex-wrap gap-2">
-          {quickQuestions.map((q) => (
+      {/* ── Header ── */}
+      <div className="px-8 pt-8 pb-5 border-b border-slate-800 shrink-0">
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="page-title flex items-center gap-2">
+              <Sparkles className="w-6 h-6 text-primary-400" />
+              AI Advisor
+            </h1>
+            <p className="page-subtitle">
+              Ask me anything — supply chain insights, general knowledge, coding help, and more
+            </p>
+          </div>
+          {messages.length > 0 && (
             <button
-              key={q}
-              onClick={() => handleQuickQuestion(q)}
-              disabled={chatMutation.isPending}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors disabled:opacity-50"
+              onClick={() => setMessages([])}
+              className="btn-ghost text-xs text-slate-500"
             >
-              {q}
+              Clear chat
             </button>
-          ))}
+          )}
         </div>
+
+        {/* Quick questions */}
+        {messages.length === 0 && (
+          <div className="mt-5">
+            <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-3">Quick Questions</p>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_QUESTIONS.map(q => (
+                <button
+                  key={q}
+                  onClick={() => handleQuick(q)}
+                  disabled={chatMutation.isPending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 text-slate-300 rounded-lg text-sm transition-all duration-150 disabled:opacity-40"
+                >
+                  <ChevronRight className="w-3 h-3 text-primary-400 shrink-0" />
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto space-y-4 mb-4">
+      {/* ── Messages ── */}
+      <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
+
         {messages.length === 0 && (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <Bot className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400">Start a conversation to get AI-powered insights</p>
+          <div className="empty-state mt-8">
+            <div className="w-16 h-16 rounded-2xl bg-primary-600/10 border border-primary-600/20 flex items-center justify-center mb-2">
+              <Bot className="w-8 h-8 text-primary-400" />
             </div>
+            <p className="empty-state-title">Start a conversation</p>
+            <p className="empty-state-body">
+              Ask about your shipments and risks, or anything else — I have full supply chain context
+              and can answer general questions too.
+            </p>
           </div>
         )}
 
         {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex gap-3 ${
-              msg.role === 'user' ? 'justify-end' : 'justify-start'
-            }`}
-          >
+          <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+
             {msg.role === 'assistant' && (
-              <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center flex-shrink-0">
-                <Bot className="w-4 h-4 text-white" />
+              <div className="w-8 h-8 rounded-xl bg-primary-600/15 border border-primary-600/25 flex items-center justify-center shrink-0 mt-0.5">
+                <Bot className="w-4 h-4 text-primary-400" />
               </div>
             )}
-            <div
-              className={`max-w-2xl rounded-2xl px-4 py-3 ${
-                msg.role === 'user'
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-slate-800 text-slate-100'
-              }`}
-            >
-              <p className="whitespace-pre-wrap">{msg.content}</p>
+
+            <div className={`max-w-2xl rounded-2xl px-4 py-3 ${
+              msg.role === 'user'
+                ? 'bg-primary-600 text-white rounded-br-sm'
+                : 'bg-slate-900 border border-slate-800 text-slate-100 rounded-bl-sm'
+            }`}>
+              <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+
               {msg.recommendations && msg.recommendations.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-700">
-                  <p className="text-xs font-semibold mb-2">Recommendations:</p>
-                  <ul className="space-y-1">
+                <div className="mt-3 pt-3 border-t border-slate-700/60">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">
+                    Recommendations
+                  </p>
+                  <ul className="space-y-1.5">
                     {msg.recommendations.map((rec, j) => (
-                      <li key={j} className="text-sm flex items-start gap-2">
-                        <span className="text-primary-400 mt-0.5">•</span>
-                        <span>{rec}</span>
+                      <li key={j} className="flex items-start gap-2 text-xs text-slate-300">
+                        <span className="text-primary-400 mt-0.5 shrink-0">•</span>
+                        {rec}
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
             </div>
+
             {msg.role === 'user' && (
-              <div className="w-8 h-8 bg-slate-700 rounded-full flex items-center justify-center flex-shrink-0">
-                <User className="w-4 h-4 text-white" />
+              <div className="w-8 h-8 rounded-xl bg-slate-700 border border-slate-600 flex items-center justify-center shrink-0 mt-0.5">
+                <User className="w-4 h-4 text-slate-300" />
               </div>
             )}
           </div>
         ))}
 
+        {/* Thinking indicator */}
         {chatMutation.isPending && (
-          <div className="flex gap-3">
-            <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center">
-              <Bot className="w-4 h-4 text-white" />
+          <div className="flex gap-3 justify-start">
+            <div className="w-8 h-8 rounded-xl bg-primary-600/15 border border-primary-600/25 flex items-center justify-center shrink-0">
+              <Bot className="w-4 h-4 text-primary-400" />
             </div>
-            <div className="bg-slate-800 rounded-2xl px-4 py-3">
-              <div className="flex gap-1">
-                <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce delay-100" />
-                <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce delay-200" />
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-sm px-4 py-3">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 bg-primary-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 bg-primary-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 bg-primary-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             </div>
           </div>
         )}
+
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Ask about disruptions, suppliers, inventory, or mitigation..."
-          className="input flex-1"
-          disabled={chatMutation.isPending}
-        />
-        <button
-          onClick={handleSend}
-          disabled={chatMutation.isPending || !input.trim()}
-          className="btn-primary flex items-center gap-2 disabled:opacity-50"
-        >
-          <Send className="w-4 h-4" />
-          Send
-        </button>
+      {/* ── Input ── */}
+      <div className="px-8 py-5 border-t border-slate-800 shrink-0">
+        {messages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {['What are the critical risks?', 'Show all shipments', 'What is Docker?'].map(q => (
+              <button
+                key={q}
+                onClick={() => handleQuick(q)}
+                disabled={chatMutation.isPending}
+                className="px-2.5 py-1 text-xs text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 rounded-lg transition-all duration-150 disabled:opacity-40"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-3">
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="Ask me anything — supply chain, general knowledge, coding…"
+            className="input flex-1"
+            disabled={chatMutation.isPending}
+            autoFocus
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || chatMutation.isPending}
+            className="btn-primary flex items-center gap-2 px-5 disabled:opacity-40"
+          >
+            <Send className="w-4 h-4" />
+            Send
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-700 mt-2 text-center">
+          Powered by Groq · qwen/qwen3.8-27b · Full supply chain context loaded
+        </p>
       </div>
     </div>
   );
